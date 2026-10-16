@@ -1,0 +1,30 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .isolated-panel {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 380px auto 800px;
+  }
+}
+
+@supports not (content-visibility: auto) {
+  .isolated-panel {
+    contain: layout style paint;
+  }
+}
+
+/* Custom subtle scrollbars for telemetry panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.5);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(51, 65, 85, 0.8);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 1);
+}
