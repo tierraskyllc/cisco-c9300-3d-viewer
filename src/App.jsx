@@ -1,26 +1,38 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import CiscoChassis3D from './components/CiscoChassis3D';
 import TopologyViewer from './components/TopologyViewer';
 import ControlPanel from './components/ControlPanel';
+import ShowCommandUploader from './components/ShowCommandUploader';
 import {
   SWITCH_MODELS,
-  LED_MODES,
-  generatePortsData
+  LED_MODES
 } from './data/c9300HardwareData';
+import {
+  correlateSwitchShowData,
+  SAMPLE_CAMPUS_SHOW_OUTPUTS
+} from './utils/ciscoCliParser';
 import {
   Box,
   Network,
   Columns,
-  Layers,
   Wind,
   Eye,
   Tag,
   Cable,
-  RotateCcw,
-  Sparkles
+  Sparkles,
+  Upload,
+  Database
 } from 'lucide-react';
 
 export default function App() {
+  // Parsed CLI & SQL Database State
+  const [parsedSwitchData, setParsedSwitchData] = useState(() =>
+    correlateSwitchShowData(SAMPLE_CAMPUS_SHOW_OUTPUTS)
+  );
+  const [savedDevices, setSavedDevices] = useState([]);
+  const [storageEngine, setStorageEngine] = useState('PostgreSQL 16 (Docker)');
+  const [isUploaderOpen, setIsUploaderOpen] = useState(false);
+
   // Core Switch Configuration State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
   const [networkModuleId, setNetworkModuleId] = useState('C9300-NM-8X');
@@ -44,42 +56,79 @@ export default function App() {
     fan3: false
   });
 
-  // 48-Port Downlink Telemetry State
-  const [portsByModel, setPortsByModel] = useState(() => ({
-    'C9300-48U': generatePortsData('C9300-48U')
-  }));
+  // Load saved devices from PostgreSQL API on mount
+  useEffect(() => {
+    fetch('/api/devices')
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.storageEngine) setStorageEngine(data.storageEngine);
+        if (Array.isArray(data.devices) && data.devices.length > 0) {
+          setSavedDevices(data.devices);
+          const first = data.devices[0];
+          if (first.parsed_snapshot && first.parsed_snapshot.ports48) {
+            setParsedSwitchData(first.parsed_snapshot);
+            if (SWITCH_MODELS[first.model]) {
+              setSwitchModelId(first.model);
+            }
+          }
+        }
+      })
+      .catch(() => {
+        // Offline / Vite-only fallback
+      });
+  }, []);
 
-  const currentPorts = useMemo(() => {
-    return portsByModel[switchModelId] || generatePortsData(switchModelId);
-  }, [portsByModel, switchModelId]);
+  const currentPorts = parsedSwitchData.ports48;
 
   const handleModelChange = (newModelId) => {
     setSwitchModelId(newModelId);
-    if (!portsByModel[newModelId]) {
-      setPortsByModel((prev) => ({
-        ...prev,
-        [newModelId]: generatePortsData(newModelId)
-      }));
-    }
   };
 
   const handleUpdatePortStatus = (portNumber, newStatus) => {
-    setPortsByModel((prev) => {
-      const list = prev[switchModelId] || generatePortsData(switchModelId);
-      const model = SWITCH_MODELS[switchModelId];
-      const updated = list.map((p) => {
+    setParsedSwitchData((prev) => {
+      const model = SWITCH_MODELS[switchModelId] || SWITCH_MODELS['C9300-48U'];
+      const updatedPorts = prev.ports48.map((p) => {
         if (p.portNumber !== portNumber) return p;
         return {
           ...p,
           status: newStatus,
+          operStatusRaw:
+            newStatus === 'up'
+              ? 'connected'
+              : newStatus === 'poe-fault'
+              ? 'err-disabled'
+              : 'notconnect',
           poeWatts:
             newStatus === 'up' && model.maxPerPortWatts > 0
               ? p.poeWatts || 15.4
               : 0
         };
       });
-      return { ...prev, [switchModelId]: updated };
+      return { ...prev, ports48: updatedPorts };
     });
+  };
+
+  const handleDeviceIngested = (deviceRecord, newParsedData) => {
+    setParsedSwitchData(newParsedData);
+    if (SWITCH_MODELS[newParsedData.device.model]) {
+      setSwitchModelId(newParsedData.device.model);
+    }
+    setSavedDevices((prev) => {
+      const filtered = prev.filter(
+        (d) => d.serial_number !== deviceRecord.serial_number
+      );
+      return [deviceRecord, ...filtered];
+    });
+  };
+
+  const handleSelectSavedDevice = (serialNumber) => {
+    const found = savedDevices.find((d) => d.serial_number === serialNumber);
+    if (found && found.parsed_snapshot) {
+      setParsedSwitchData(found.parsed_snapshot);
+      if (SWITCH_MODELS[found.model]) {
+        setSwitchModelId(found.model);
+      }
+    }
   };
 
   // Active Selection (either { type: 'component', id: 'chassis-main' } or { type: 'port', portNumber: 1 })
@@ -104,7 +153,7 @@ export default function App() {
     setLedMode(next.id);
   };
 
-  const switchModel = SWITCH_MODELS[switchModelId];
+  const switchModel = SWITCH_MODELS[switchModelId] || SWITCH_MODELS['C9300-48U'];
 
   // Calculate Total Active PoE Draw and Available PSU PoE Budget
   const totalPoeWatts = useMemo(() => {
@@ -123,7 +172,7 @@ export default function App() {
   return (
     <div className="flex flex-col w-screen h-screen bg-[#060911] text-slate-100 select-none overflow-hidden">
       {/* =========================================================
-          TOP GLOBAL NAVIGATION & HARDWARE CONFIGURATOR BAR
+          TOP GLOBAL NAVIGATION, SQL DEVICE SELECTOR & CLI UPLOADER
          ========================================================= */}
       <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-slate-950/90 border-b border-slate-800/90 shrink-0">
         <div className="flex items-center gap-3">
@@ -133,22 +182,54 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold tracking-tight text-white">
-                Cisco Catalyst 9300 (48-Port) — 3D Hardware & Topology Explorer
+                {parsedSwitchData.device.hostname} — 3D Hardware & Topology Explorer
               </h1>
-              <span className="hidden sm:inline-block px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                Cisco HIG Reference
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <Database className="w-2.5 h-2.5" /> S/N: {parsedSwitchData.device.serialNumber}
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              {switchModel.downlinkDesc} • {switchModel.stackingTech}
+              IOS-XE {parsedSwitchData.device.iosVersion} • Mgmt: {parsedSwitchData.device.mgmtIp} • {switchModel.downlinkDesc}
             </p>
           </div>
         </div>
 
-        {/* Center Switch Sub-Model Selector */}
+        {/* Center/Right Controls: Upload Show Commands + SQL Device Switcher + SKU + View Mode */}
         <div className="flex flex-wrap items-center gap-2">
+          {/* Primary Action: Upload / Parse 7 Cisco Show Commands */}
+          <button
+            onClick={() => setIsUploaderOpen(true)}
+            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 cursor-pointer transition"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Upload Show Commands
+          </button>
+
+          {/* SQL Database Stored Switches Selector */}
+          {savedDevices.length > 0 && (
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <select
+                value={parsedSwitchData.device.serialNumber}
+                onChange={(e) => handleSelectSavedDevice(e.target.value)}
+                className="bg-transparent text-xs font-mono font-semibold text-emerald-300 focus:outline-none cursor-pointer"
+              >
+                {savedDevices.map((d) => (
+                  <option
+                    key={d.serial_number}
+                    value={d.serial_number}
+                    className="bg-slate-950 text-slate-100"
+                  >
+                    {d.hostname} ({d.serial_number})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Switch SKU Selector */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[11px] font-mono text-slate-400">Chassis SKU:</span>
+            <span className="text-[11px] font-mono text-slate-400">SKU:</span>
             <select
               value={switchModelId}
               onChange={(e) => handleModelChange(e.target.value)}
@@ -166,15 +247,15 @@ export default function App() {
           <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
             {[
               { id: '3d', label: '3D Chassis', icon: Box },
-              { id: 'split', label: 'Split (3D + Topology)', icon: Columns },
-              { id: 'topology', label: 'Topology Graph', icon: Network }
+              { id: 'split', label: 'Split View', icon: Columns },
+              { id: 'topology', label: 'Topology', icon: Network }
             ].map((mode) => {
               const Icon = mode.icon;
               return (
                 <button
                   key={mode.id}
                   onClick={() => setViewMode(mode.id)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                     viewMode === mode.id
                       ? 'bg-sky-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
@@ -236,7 +317,7 @@ export default function App() {
                     max="1"
                     step="0.02"
                     value={explodeFactor}
-                    onChange={(e) => setExplodeFactor( parseFloat(e.target.value) )}
+                    onChange={(e) => setExplodeFactor(parseFloat(e.target.value))}
                     className="w-20 accent-sky-400 cursor-pointer"
                   />
                   <button
@@ -343,6 +424,7 @@ export default function App() {
                 psuStates={psuStates}
                 totalPoeWatts={totalPoeWatts}
                 poeBudgetWatts={poeBudgetWatts}
+                parsedSwitchData={parsedSwitchData}
               />
             </div>
           )}
@@ -367,8 +449,17 @@ export default function App() {
           totalPoeWatts={totalPoeWatts}
           poeBudgetWatts={poeBudgetWatts}
           switchModel={switchModel}
+          parsedSwitchData={parsedSwitchData}
         />
       </main>
+
+      {/* CLI Show Command Upload & SQL Ingestion Studio Modal */}
+      <ShowCommandUploader
+        isOpen={isUploaderOpen}
+        onClose={() => setIsUploaderOpen(false)}
+        onDeviceIngested={handleDeviceIngested}
+        storageEngine={storageEngine}
+      />
     </div>
   );
 }

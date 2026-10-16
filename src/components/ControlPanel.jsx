@@ -6,17 +6,15 @@ import {
   RJ45_PINOUT_SPEC
 } from '../data/c9300HardwareData';
 import {
-  Cpu,
   Zap,
-  Fan,
   Terminal,
   Radio,
   Cable,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
   Sliders,
-  ChevronRight
+  ChevronRight,
+  Database,
+  Network,
+  FileCode
 } from 'lucide-react';
 
 export default function ControlPanel({
@@ -36,7 +34,8 @@ export default function ControlPanel({
   onSetFanFaults,
   totalPoeWatts,
   poeBudgetWatts,
-  switchModel
+  switchModel,
+  parsedSwitchData
 }) {
   const [showPinout, setShowPinout] = useState(false);
   const [zoneTab, setZoneTab] = useState('ALL'); // 'ALL' | 'FRONT' | 'REAR' | 'INTERNAL'
@@ -78,13 +77,26 @@ export default function ControlPanel({
   const poeUsagePercent =
     poeBudgetWatts > 0 ? Math.min(100, (totalPoeWatts / poeBudgetWatts) * 100) : 0;
 
+  const devMeta = parsedSwitchData?.device;
+
   return (
-    <aside className="isolated-panel w-full lg:w-[430px] xl:w-[460px] h-full bg-slate-900/65 border border-slate-800/90 rounded-xl flex flex-col overflow-hidden backdrop-blur-md shadow-2xl">
-      {/* 1. PoE Power Budget & Hardware Health Summary Header */}
-      <div className="p-3.5 bg-slate-950/80 border-b border-slate-800 space-y-2.5">
+    <aside className="isolated-panel w-full lg:w-[440px] xl:w-[470px] h-full bg-slate-900/65 border border-slate-800/90 rounded-xl flex flex-col overflow-hidden backdrop-blur-md shadow-2xl">
+      {/* 1. Device Identity (show version) + PoE Power Budget Header */}
+      <div className="p-3.5 bg-slate-950/85 border-b border-slate-800 space-y-2">
+        {devMeta && (
+          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] font-mono">
+            <div className="truncate">
+              <span className="text-sky-400 font-bold">{devMeta.hostname}</span>{' '}
+              <span className="text-slate-400">• S/N:</span>{' '}
+              <span className="text-emerald-300">{devMeta.serialNumber}</span>
+            </div>
+            <span className="text-slate-300 shrink-0">IOS-XE {devMeta.iosVersion}</span>
+          </div>
+        )}
+
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-mono uppercase tracking-wider text-sky-400 font-bold flex items-center gap-1.5">
-            <Zap className="w-3.5 h-3.5" /> {switchModel.id} PoE Budget Telemetry
+            <Zap className="w-3.5 h-3.5" /> {switchModel.id} PoE Budget
           </span>
           <span className="text-xs font-mono text-slate-200 font-semibold">
             {totalPoeWatts.toFixed(1)} W / {poeBudgetWatts} W ({poeUsagePercent.toFixed(0)}%)
@@ -125,10 +137,9 @@ export default function ControlPanel({
               ))}
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-1 max-h-28 overflow-y-auto pr-1">
+          <div className="grid grid-cols-2 gap-1 max-h-24 overflow-y-auto pr-1">
             {filteredComponents.map((item) => {
-              const isActive =
-                !isPortSelected && selectedItem?.id === item.id;
+              const isActive = !isPortSelected && selectedItem?.id === item.id;
               return (
                 <button
                   key={item.id}
@@ -150,7 +161,7 @@ export default function ControlPanel({
         </div>
       </div>
 
-      {/* 2. Contextual Inspector Body (Selected Component OR Selected RJ-45 Port) */}
+      {/* 2. Contextual Inspector Body (Selected Port OR Selected Chassis Component) */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {isPortSelected && activePort ? (
           /* =================================================
@@ -170,8 +181,8 @@ export default function ControlPanel({
                 <h2 className="text-xl font-bold text-white mt-1 font-mono">
                   Interface {activePort.interfaceName}
                 </h2>
-                <p className="text-xs text-slate-300 mt-0.5">
-                  {activePort.connectedDevice}
+                <p className="text-xs text-emerald-300 font-mono mt-0.5">
+                  Desc: {activePort.description || activePort.connectedDevice}
                 </p>
               </div>
               <button
@@ -184,17 +195,111 @@ export default function ControlPanel({
               </button>
             </div>
 
+            {/* Parsed show interface status + show int trunk + show vlan Grid */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/90">
+                <span className="text-[10px] text-slate-400 block font-mono">
+                  show interface status
+                </span>
+                <span className="font-mono font-bold text-slate-100">
+                  {activePort.operStatusRaw || activePort.status} ({activePort.mediaType || '10/100/1000BaseTX'})
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/90">
+                <span className="text-[10px] text-slate-400 block font-mono">
+                  Running vs Set Speed
+                </span>
+                <span className="font-mono font-bold text-sky-300">
+                  Run: {activePort.speed}M | Set: {activePort.configuredSpeed || 'auto'} ({activePort.duplex})
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/90">
+                <span className="text-[10px] text-slate-400 block font-mono">
+                  show vlan / show int trunk
+                </span>
+                <span className="font-mono font-semibold text-purple-300 truncate block">
+                  {activePort.isTrunk
+                    ? `TRUNK (Native ${activePort.vlan})`
+                    : `VLAN ${activePort.vlan}: ${activePort.vlanName}`}
+                </span>
+              </div>
+              <div className="p-2.5 rounded-lg bg-slate-950/60 border border-slate-800/90">
+                <span className="text-[10px] text-slate-400 block font-mono">
+                  PoE / Voice VLAN
+                </span>
+                <span className="font-mono font-semibold text-amber-300">
+                  {activePort.poeWatts}W {activePort.voiceVlan ? `• Voice VLAN ${activePort.voiceVlan}` : ''}
+                </span>
+              </div>
+            </div>
+
+            {/* Parsed show cdp neighbor detail Card */}
+            {activePort.cdpNeighbor && (
+              <div className="p-3 rounded-lg bg-amber-950/20 border border-amber-500/40 space-y-1.5 text-xs">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-amber-300 font-bold flex items-center gap-1.5">
+                  <Network className="w-3.5 h-3.5" /> Discovered via show cdp neighbor detail
+                </div>
+                <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Neighbor Device ID</span>
+                    <span className="text-white font-bold">{activePort.cdpNeighbor.deviceId}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Neighbor IPv4 Address</span>
+                    <span className="text-emerald-300 font-bold">{activePort.cdpNeighbor.neighborIp}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Hardware Platform</span>
+                    <span className="text-slate-200">{activePort.cdpNeighbor.platform}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block text-[10px]">Remote Port ID</span>
+                    <span className="text-sky-300">{activePort.cdpNeighbor.remotePort}</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Parsed show int trunk Details (if port is Trunk) */}
+            {activePort.isTrunk && activePort.trunkDetails && (
+              <div className="p-3 rounded-lg bg-indigo-950/25 border border-indigo-500/40 space-y-1 text-xs font-mono">
+                <div className="text-[10px] uppercase tracking-wider text-indigo-300 font-bold">
+                  show int trunk — 802.1Q Trunk State
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Mode: <strong className="text-white">{activePort.trunkDetails.mode}</strong> | Encap:{' '}
+                  <strong className="text-white">{activePort.trunkDetails.encapsulation}</strong> | Native VLAN:{' '}
+                  <strong className="text-amber-300">{activePort.trunkDetails.nativeVlan}</strong>
+                </div>
+                <div className="text-[11px] text-slate-300">
+                  Allowed VLANs: <span className="text-emerald-300">{activePort.trunkDetails.allowedVlans}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Parsed sho run | section interface Stanza */}
+            {activePort.runningConfig && (
+              <div className="space-y-1">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <FileCode className="w-3.5 h-3.5 text-sky-400" /> sho run | section interface ({activePort.interfaceName})
+                </div>
+                <pre className="p-3 rounded-lg bg-[#050811] border border-slate-800 font-mono text-[11px] text-emerald-300 overflow-x-auto leading-relaxed">
+                  {activePort.runningConfig}
+                </pre>
+              </div>
+            )}
+
             {/* Interactive Port State Simulator */}
             <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 space-y-2">
               <div className="text-[11px] font-mono uppercase text-slate-400 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-sky-400" /> Simulate Port State (Updates 3D LED & Topology)
+                <Sliders className="w-3.5 h-3.5 text-sky-400" /> Simulate Port State Override
               </div>
               <div className="grid grid-cols-4 gap-1.5">
                 {[
-                  { id: 'up', label: 'Link Up', color: 'emerald' },
-                  { id: 'stp-blocking', label: 'STP Block', color: 'amber' },
-                  { id: 'poe-fault', label: 'PoE Fault', color: 'rose' },
-                  { id: 'down', label: 'Shut / Down', color: 'slate' }
+                  { id: 'up', label: 'Link Up' },
+                  { id: 'stp-blocking', label: 'STP Block' },
+                  { id: 'poe-fault', label: 'PoE Fault' },
+                  { id: 'down', label: 'Shut / Down' }
                 ].map((st) => (
                   <button
                     key={st.id}
@@ -208,45 +313,6 @@ export default function ControlPanel({
                     {st.label}
                   </button>
                 ))}
-              </div>
-            </div>
-
-            {/* Port Telemetry Key-Value Grid */}
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">Speed / Duplex</span>
-                <span className="font-mono font-semibold text-slate-100">
-                  {activePort.speed === 'auto' ? 'Auto' : `${activePort.speed} Mbps`} /{' '}
-                  {activePort.duplex.toUpperCase()}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">VLAN Assignment</span>
-                <span className="font-mono font-semibold text-sky-300">
-                  VLAN {activePort.vlan} ({activePort.vlanName})
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">IEEE PoE Draw / Class</span>
-                <span className="font-mono font-semibold text-amber-300">
-                  {activePort.poeWatts} W ({activePort.poeClass})
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">TDR Cable Length</span>
-                <span className="font-mono font-semibold text-slate-100">
-                  {activePort.cableLengthMeters}m ({activePort.cableCategory})
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">Endpoint IP / Host</span>
-                <span className="font-mono text-slate-200 truncate block">
-                  {activePort.ipAddress}
-                </span>
-              </div>
-              <div className="p-2.5 rounded-lg bg-slate-950/50 border border-slate-800/80">
-                <span className="text-[10px] text-slate-400 block">Learned MAC Address</span>
-                <span className="font-mono text-slate-200">{activePort.macAddress}</span>
               </div>
             </div>
 
@@ -315,7 +381,32 @@ export default function ControlPanel({
               {activeComponent.summary}
             </p>
 
-            {/* Interactive Hardware Simulation Controls Based on Active Component */}
+            {/* Parsed show ip interface brief & show vlan Summary (When Chassis / Uplinks Selected) */}
+            {parsedSwitchData &&
+              (activeComponent.id === 'chassis-main' ||
+                activeComponent.id === 'rear-mgmt-block' ||
+                activeComponent.id === 'uplink-module') && (
+                <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-2">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-400 font-bold">
+                    Parsed IPv4 SVIs & Management (show ip interface brief)
+                  </div>
+                  <div className="grid grid-cols-2 gap-1.5 font-mono text-[11px]">
+                    {parsedSwitchData.ipInterfaces
+                      .filter((ip) => ip.ipAddress !== 'unassigned')
+                      .map((ip, i) => (
+                        <div
+                          key={i}
+                          className="px-2 py-1 rounded bg-slate-900 border border-slate-800 flex items-center justify-between"
+                        >
+                          <span className="text-sky-300 font-bold">{ip.interfaceName}</span>
+                          <span className="text-emerald-300">{ip.ipAddress}</span>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+
+            {/* Interactive Hardware Simulation Controls */}
             <div className="p-3 rounded-lg bg-slate-950/80 border border-slate-800 space-y-3">
               <div className="text-[11px] font-mono uppercase tracking-wider text-sky-400 font-semibold flex items-center gap-1.5">
                 <Sliders className="w-3.5 h-3.5" /> Live Interactive Hardware Controls
@@ -458,7 +549,9 @@ export default function ControlPanel({
               <div className="p-2.5 rounded-lg bg-[#050811] border border-slate-800 font-mono text-[11px] text-emerald-300 space-y-1">
                 {activeComponent.cliCommands.map((cmd, idx) => (
                   <div key={idx} className="truncate">
-                    <span className="text-slate-500 select-none">C9300-SW1# </span>
+                    <span className="text-slate-500 select-none">
+                      {devMeta?.hostname || 'C9300-SW1'}#{' '}
+                    </span>
                     {cmd}
                   </div>
                 ))}

@@ -1,0 +1,36 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: c9300-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: cisco
+      POSTGRES_PASSWORD: c9300secret
+      POSTGRES_DB: c9300_topology
+    ports:
+      - "5433:5432"
+    volumes:
+      - c9300_pgdata:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cisco -d c9300_topology"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    container_name: c9300-topology-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://cisco:c9300secret@postgres:5432/c9300_topology
+      PORT: 3001
+    ports:
+      - "5173:5173"
+      - "3001:3001"
+
+volumes:
+  c9300_pgdata:
