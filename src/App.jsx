@@ -21,7 +21,10 @@ import {
   Cable,
   Sparkles,
   Upload,
-  Database
+  Database,
+  Sun,
+  Maximize2,
+  Grid3X3
 } from 'lucide-react';
 
 export default function App() {
@@ -39,8 +42,11 @@ export default function App() {
   const [viewMode, setViewMode] = useState('split'); // '3d' | 'split' | 'topology'
   const [cameraPreset, setCameraPreset] = useState('isometric');
 
-  // 3D Inspection & Disassembly Controls
+  // 3D Inspection, Backdrop Brightness, Scale & Disassembly Controls
   const [explodeFactor, setExplodeFactor] = useState(0); // 0.0 to 1.0
+  const [backdropBrightness, setBackdropBrightness] = useState(0.68); // 0.0 (Dark) -> 0.68 (Studio Slate) -> 1.0 (Light Showroom)
+  const [chassisScale, setChassisScale] = useState(1.18); // 0.85x to 1.5x
+  const [showStudioGrid, setShowStudioGrid] = useState(true);
   const [xrayMode, setXrayMode] = useState(false);
   const [showAirflow, setShowAirflow] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
@@ -295,7 +301,7 @@ export default function App() {
                   <button
                     key={cam.id}
                     onClick={() => setCameraPreset(cam.id)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
+                    className={`px-2 py-1 rounded-md text-xs font-medium transition cursor-pointer ${
                       cameraPreset === cam.id
                         ? 'bg-sky-500/25 text-sky-300 border border-sky-500/50'
                         : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700 border border-slate-700/50'
@@ -306,11 +312,63 @@ export default function App() {
                 ))}
               </div>
 
-              {/* Exploded View Slider & Interactive Visualization Toggles */}
+              {/* Backdrop Brightness Slider + Chassis Scale + Exploded View + Visualization Toggles */}
               <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                {/* 1. Backdrop Brightness Control (Dark / Slate / Showroom Light) */}
+                <div className="flex items-center gap-1.5 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <Sun className="w-3.5 h-3.5 text-sky-400" />
+                  <span className="text-[11px] font-mono text-slate-300">Backdrop:</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.02"
+                    value={backdropBrightness}
+                    onChange={(e) => setBackdropBrightness(parseFloat(e.target.value))}
+                    className="w-16 accent-sky-400 cursor-pointer"
+                    title="Adjust 3D studio backdrop brightness & lighting intensity"
+                  />
+                  {[
+                    { label: 'Dark', val: 0.12 },
+                    { label: 'Slate', val: 0.68 },
+                    { label: 'Light', val: 0.96 }
+                  ].map((preset) => (
+                    <button
+                      key={preset.label}
+                      onClick={() => setBackdropBrightness(preset.val)}
+                      className={`text-[10px] font-mono px-1.5 py-0.5 rounded border cursor-pointer transition ${
+                        Math.abs(backdropBrightness - preset.val) < 0.1
+                          ? 'bg-sky-500/25 text-sky-200 border-sky-400/60 font-bold'
+                          : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-slate-200'
+                      }`}
+                    >
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 2. Chassis Scale Control */}
+                <div className="flex items-center gap-1.5 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
+                  <Maximize2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="text-[11px] font-mono text-slate-300">
+                    Scale {chassisScale.toFixed(2)}×
+                  </span>
+                  <input
+                    type="range"
+                    min="0.85"
+                    max="1.5"
+                    step="0.05"
+                    value={chassisScale}
+                    onChange={(e) => setChassisScale(parseFloat(e.target.value))}
+                    className="w-14 accent-emerald-400 cursor-pointer"
+                    title="Scale 3D switch size in viewport"
+                  />
+                </div>
+
+                {/* 3. Exploded Parts Slider */}
+                <div className="flex items-center gap-1.5 bg-slate-950/80 px-2.5 py-1 rounded-lg border border-slate-800">
                   <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="text-[11px] font-mono text-slate-300">Explode Parts:</span>
+                  <span className="text-[11px] font-mono text-slate-300">Explode:</span>
                   <input
                     type="range"
                     min="0"
@@ -318,7 +376,7 @@ export default function App() {
                     step="0.02"
                     value={explodeFactor}
                     onChange={(e) => setExplodeFactor(parseFloat(e.target.value))}
-                    className="w-20 accent-sky-400 cursor-pointer"
+                    className="w-16 accent-amber-400 cursor-pointer"
                   />
                   <button
                     onClick={() => setExplodeFactor(explodeFactor > 0.1 ? 0 : 0.75)}
@@ -329,19 +387,30 @@ export default function App() {
                 </div>
 
                 <button
+                  onClick={() => setShowStudioGrid(!showStudioGrid)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                    showStudioGrid
+                      ? 'bg-sky-500/20 text-sky-300 border-sky-500/50'
+                      : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
+                  }`}
+                >
+                  <Grid3X3 className="w-3.5 h-3.5" /> Floor Grid
+                </button>
+
+                <button
                   onClick={() => setXrayMode(!xrayMode)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
                     xrayMode
                       ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                       : 'bg-slate-800/80 text-slate-300 border-slate-700/60'
                   }`}
                 >
-                  <Eye className="w-3.5 h-3.5" /> Internal PCB
+                  <Eye className="w-3.5 h-3.5" /> PCB
                 </button>
 
                 <button
                   onClick={() => setShowAirflow(!showAirflow)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
                     showAirflow
                       ? 'bg-cyan-500/20 text-cyan-300 border-cyan-500/50'
                       : 'bg-slate-800/80 text-slate-300 border-slate-700/60'
@@ -352,18 +421,18 @@ export default function App() {
 
                 <button
                   onClick={() => setShowPatchCables(!showPatchCables)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
                     showPatchCables
                       ? 'bg-purple-500/20 text-purple-300 border-purple-500/50'
                       : 'bg-slate-800/80 text-slate-300 border-slate-700/60'
                   }`}
                 >
-                  <Cable className="w-3.5 h-3.5" /> Patch Boots
+                  <Cable className="w-3.5 h-3.5" /> Boots
                 </button>
 
                 <button
                   onClick={() => setShowLabels(!showLabels)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border transition cursor-pointer ${
                     showLabels
                       ? 'bg-blue-500/20 text-blue-300 border-blue-500/50'
                       : 'bg-slate-800/80 text-slate-400 border-slate-700/60'
@@ -396,6 +465,9 @@ export default function App() {
                 fanFaults={fanFaults}
                 psuModel={switchModel.defaultPsu}
                 cameraPreset={cameraPreset}
+                chassisScale={chassisScale}
+                backdropBrightness={backdropBrightness}
+                showStudioGrid={showStudioGrid}
               />
             </div>
           )}

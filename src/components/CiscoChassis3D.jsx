@@ -1,26 +1,33 @@
 import React, { useRef, useState, useMemo } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { OrbitControls, PerspectiveCamera, Html, ContactShadows, RoundedBox } from '@react-three/drei';
+import {
+  OrbitControls,
+  PerspectiveCamera,
+  Html,
+  ContactShadows,
+  RoundedBox,
+  Grid
+} from '@react-three/drei';
 import * as THREE from 'three';
 
-// Smooth camera controller that animates to preset viewpoints
+// Smooth camera controller that animates to preset viewpoints (framed closer so the switch fills the viewport)
 function CameraRig({ cameraPreset, controlsRef }) {
   const { camera } = useThree();
-  const targetPos = useRef(new THREE.Vector3(0, 6.5, 16));
+  const targetPos = useRef(new THREE.Vector3(8.5, 4.8, 10.8));
   const targetLookAt = useRef(new THREE.Vector3(0, 0, 0));
   const isTransitioning = useRef(false);
   const lastPreset = useRef(cameraPreset);
 
   const presets = useMemo(
     () => ({
-      isometric: { pos: [11, 7.5, 14], target: [0, 0, 0] },
-      front: { pos: [0, 0.6, 13.5], target: [0, 0, 3.5] },
-      rear: { pos: [0, 0.8, -14.5], target: [0, 0, -3.5] },
-      left: { pos: [-16, 2.0, 0], target: [-3, 0, 0] },
-      right: { pos: [16, 2.0, 0], target: [3, 0, 0] },
-      top: { pos: [0, 16.5, 0.01], target: [0, 0, 0] },
-      uplink: { pos: [5.5, 0.5, 9.5], target: [5.5, 0, 5.5] },
-      ports: { pos: [-1.2, 0.4, 9.8], target: [-1.2, 0, 5.5] }
+      isometric: { pos: [8.8, 4.8, 11.2], target: [0, 0, 0] },
+      front: { pos: [0, 0.4, 10.6], target: [0, 0, 3.8] },
+      rear: { pos: [0, 0.5, -11.2], target: [0, 0, -3.8] },
+      left: { pos: [-12.8, 1.6, 0], target: [-3, 0, 0] },
+      right: { pos: [12.8, 1.6, 0], target: [3, 0, 0] },
+      top: { pos: [0, 13.2, 0.01], target: [0, 0, 0] },
+      uplink: { pos: [5.6, 0.35, 8.4], target: [5.6, 0, 5.5] },
+      ports: { pos: [-1.2, 0.25, 8.6], target: [-1.2, 0, 5.5] }
     }),
     []
   );
@@ -74,8 +81,7 @@ function AirflowParticles({ visible, fanFaults }) {
 
     groupRef.current.children.forEach((mesh, idx) => {
       const s = streams[idx];
-      // Flow from Z = +7.2 (front intake) to Z = -8.5 (rear exhaust)
-      const progress = ((t * s.speed * speedFactor + s.offset) % 16) / 16; // 0 -> 1
+      const progress = ((t * s.speed * speedFactor + s.offset) % 16) / 16;
       const z = 7.2 - progress * 15.7;
       mesh.position.z = z;
       mesh.position.x = s.fromSide
@@ -83,7 +89,6 @@ function AirflowParticles({ visible, fanFaults }) {
         : s.x;
       mesh.position.y = s.y;
 
-      // Color transitions from Cool Intake Cyan/Blue (front) to Warm Exhaust Orange/Red (rear)
       const color = new THREE.Color().lerpColors(
         new THREE.Color('#38bdf8'),
         new THREE.Color('#f97316'),
@@ -158,9 +163,9 @@ function FanModule3D({
       {/* Fan Module Cartridge Body */}
       <RoundedBox args={[1.45, 1.38, 1.25]} radius={0.05} smoothness={3} position={[0, 0, 0.52]}>
         <meshStandardMaterial
-          color={isSelected ? '#2563eb' : hovered ? '#334155' : '#1e293b'}
-          metalness={0.75}
-          roughness={0.3}
+          color={isSelected ? '#3b82f6' : hovered ? '#475569' : '#334155'}
+          metalness={0.5}
+          roughness={0.35}
         />
       </RoundedBox>
 
@@ -168,8 +173,8 @@ function FanModule3D({
       <mesh position={[0, 0, -0.12]}>
         <boxGeometry args={[1.48, 1.4, 0.08]} />
         <meshStandardMaterial
-          color={isSelected ? '#3b82f6' : hovered ? '#475569' : '#273244'}
-          metalness={0.65}
+          color={isSelected ? '#3b82f6' : hovered ? '#64748b' : '#475569'}
+          metalness={0.5}
           roughness={0.35}
         />
       </mesh>
@@ -177,14 +182,14 @@ function FanModule3D({
       {/* Circular Fan Vent Cutout Shroud */}
       <mesh position={[0, -0.04, -0.16]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.52, 0.52, 0.06, 24]} />
-        <meshStandardMaterial color="#090d16" roughness={0.8} />
+        <meshStandardMaterial color="#0f172a" roughness={0.75} />
       </mesh>
 
-      {/* Spinning Fan Rotor & 7 Blades */}
+      {/* Spinning Fan Rotor & 6 Blades */}
       <group ref={bladesRef} position={[0, -0.04, -0.18]}>
         <mesh rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry args={[0.16, 0.16, 0.08, 16]} />
-          <meshStandardMaterial color="#334155" metalness={0.8} roughness={0.2} />
+          <meshStandardMaterial color="#64748b" metalness={0.6} roughness={0.25} />
         </mesh>
         {[0, 1, 2, 3, 4, 5].map((b) => {
           const angle = (b / 6) * Math.PI * 2;
@@ -196,8 +201,8 @@ function FanModule3D({
             >
               <boxGeometry args={[0.34, 0.11, 0.02]} />
               <meshStandardMaterial
-                color={isFaulty ? '#ef4444' : '#64748b'}
-                emissive={isFaulty ? '#7f1d1d' : '#0f172a'}
+                color={isFaulty ? '#ef4444' : '#94a3b8'}
+                emissive={isFaulty ? '#7f1d1d' : '#1e293b'}
                 emissiveIntensity={0.6}
               />
             </mesh>
@@ -218,15 +223,15 @@ function FanModule3D({
       {/* Pinch Extraction Tabs (Top & Bottom) */}
       <mesh position={[0.48, 0.48, -0.22]}>
         <boxGeometry args={[0.22, 0.12, 0.16]} />
-        <meshStandardMaterial color="#0ea5e9" roughness={0.4} />
+        <meshStandardMaterial color="#0ea5e9" roughness={0.35} />
       </mesh>
       <mesh position={[0.48, -0.48, -0.22]}>
         <boxGeometry args={[0.22, 0.12, 0.16]} />
-        <meshStandardMaterial color="#0ea5e9" roughness={0.4} />
+        <meshStandardMaterial color="#0ea5e9" roughness={0.35} />
       </mesh>
 
       {showLabels && index === 1 && (
-        <Html position={[0, 1.05, -0.2]} center distanceFactor={14}>
+        <Html position={[0, 1.05, -0.2]} center distanceFactor={13}>
           <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 whitespace-nowrap shadow-lg pointer-events-none">
             #6 3× Hot-Swap Fans (FAN-T2=)
           </div>
@@ -242,7 +247,7 @@ function PowerSupplyModule3D({
   slotLabel,
   position,
   explodeFactor,
-  psuState, // 'ok' | 'fault' | 'blank'
+  psuState,
   psuModel,
   selectedId,
   onSelect,
@@ -281,9 +286,9 @@ function PowerSupplyModule3D({
         position={[0, 0, isBlank ? 0.1 : 2.45]}
       >
         <meshStandardMaterial
-          color={isSelected ? '#1d4ed8' : hovered ? '#334155' : '#1e293b'}
-          metalness={0.82}
-          roughness={0.28}
+          color={isSelected ? '#2563eb' : hovered ? '#475569' : '#334155'}
+          metalness={0.55}
+          roughness={0.32}
         />
       </RoundedBox>
 
@@ -291,9 +296,9 @@ function PowerSupplyModule3D({
       <mesh position={[0, 0, -0.14]}>
         <boxGeometry args={[3.14, 1.44, 0.08]} />
         <meshStandardMaterial
-          color={isSelected ? '#3b82f6' : hovered ? '#475569' : '#263142'}
-          metalness={0.7}
-          roughness={0.32}
+          color={isSelected ? '#3b82f6' : hovered ? '#64748b' : '#475569'}
+          metalness={0.5}
+          roughness={0.35}
         />
       </mesh>
 
@@ -303,7 +308,7 @@ function PowerSupplyModule3D({
           <group position={[-0.78, -0.05, -0.19]}>
             <mesh>
               <boxGeometry args={[0.82, 0.62, 0.1]} />
-              <meshStandardMaterial color="#090d16" roughness={0.85} />
+              <meshStandardMaterial color="#0f172a" roughness={0.85} />
             </mesh>
             {/* 3 Brass Prongs */}
             <mesh position={[0, 0.12, -0.02]}>
@@ -323,13 +328,13 @@ function PowerSupplyModule3D({
           {/* PSU Internal Cooling Fan Exhaust Grille */}
           <mesh position={[0.25, -0.04, -0.18]} rotation={[Math.PI / 2, 0, 0]}>
             <cylinderGeometry args={[0.42, 0.42, 0.05, 20]} />
-            <meshStandardMaterial color="#0f172a" roughness={0.7} />
+            <meshStandardMaterial color="#1e293b" roughness={0.65} />
           </mesh>
 
           {/* PSU Extraction Pull Handle */}
           <mesh position={[1.05, 0, -0.35]}>
             <boxGeometry args={[0.16, 0.92, 0.35]} />
-            <meshStandardMaterial color="#475569" metalness={0.8} roughness={0.25} />
+            <meshStandardMaterial color="#94a3b8" metalness={0.65} roughness={0.25} />
           </mesh>
 
           {/* Color-Coded Release Latch Tab */}
@@ -359,7 +364,7 @@ function PowerSupplyModule3D({
       )}
 
       {showLabels && id === 'psu-1' && (
-        <Html position={[1.6, 1.05, -0.2]} center distanceFactor={14}>
+        <Html position={[1.6, 1.05, -0.2]} center distanceFactor={13}>
           <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-emerald-500/40 text-[10px] font-mono text-emerald-300 whitespace-nowrap shadow-lg pointer-events-none">
             #11 Dual Hot-Swap PSU Bays (PS1 / PS2)
           </div>
@@ -387,7 +392,10 @@ function SwitchScene({
   psuStates,
   fanFaults,
   psuModel,
-  cameraPreset
+  cameraPreset,
+  chassisScale = 1.15,
+  backdropBrightness = 0.65,
+  showStudioGrid = true
 }) {
   const controlsRef = useRef();
   const [hoveredLabel, setHoveredLabel] = useState(null);
@@ -402,46 +410,45 @@ function SwitchScene({
   const getPortLedColor = (port) => {
     switch (ledMode) {
       case 'STAT':
-        if (port.status === 'up') return '#10b981'; // Green link/activity
-        if (port.status === 'stp-blocking') return '#f59e0b'; // Amber STP blocking
-        if (port.status === 'poe-fault') return '#ef4444'; // Fault
-        return '#1e293b'; // Off
+        if (port.status === 'up') return '#10b981';
+        if (port.status === 'stp-blocking') return '#f59e0b';
+        if (port.status === 'poe-fault') return '#ef4444';
+        return '#334155';
       case 'SPEED':
-        if (port.status === 'down') return '#1e293b';
-        if (port.speed === '5000' || port.speed === '10000') return '#38bdf8'; // mGig double-blink
-        if (port.speed === '1000') return '#10b981'; // 1G green flash
-        if (port.speed === '100') return '#84cc16'; // 100M solid green
-        return '#1e293b';
+        if (port.status === 'down') return '#334155';
+        if (port.speed === '5000' || port.speed === '10000') return '#38bdf8';
+        if (port.speed === '1000') return '#10b981';
+        if (port.speed === '100') return '#84cc16';
+        return '#334155';
       case 'DUPLX':
-        return port.status !== 'down' && port.duplex === 'full' ? '#10b981' : '#1e293b';
+        return port.status !== 'down' && port.duplex === 'full' ? '#10b981' : '#334155';
       case 'ACTV':
-        return '#10b981'; // This switch is Active Master
+        return '#10b981';
       case 'STACK':
-        // First 8 port LEDs show active StackWise-480 members (Members 1, 2, 3 active)
-        if (port.portNumber === 1) return '#38bdf8'; // Flashing Master Member #1
-        if (port.portNumber === 2 || port.portNumber === 3) return '#10b981'; // Members #2 & #3
-        return '#1e293b';
+        if (port.portNumber === 1) return '#38bdf8';
+        if (port.portNumber === 2 || port.portNumber === 3) return '#10b981';
+        return '#334155';
       case 'PoE':
-        if (port.status === 'poe-fault') return '#ef4444'; // Blinking Amber/Red fault
-        if (port.poeWatts > 0) return '#10b981'; // Green PoE delivering power
-        return '#1e293b';
+        if (port.status === 'poe-fault') return '#ef4444';
+        if (port.poeWatts > 0) return '#10b981';
+        return '#334155';
       case 'S-PWR':
-        if (port.portNumber <= 4) return '#10b981'; // 4 StackPower ring members healthy
-        return '#1e293b';
+        if (port.portNumber <= 4) return '#10b981';
+        return '#334155';
       case 'XPS':
-        return '#1e293b'; // Off in StackPower mode
+        return '#334155';
       default:
-        return port.status === 'up' ? '#10b981' : '#1e293b';
+        return port.status === 'up' ? '#10b981' : '#334155';
     }
   };
 
   // Compute physical 3D coordinates for the 48 RJ-45 ports (arranged in 4 banks of 12 ports = 2 rows × 6 cols per bank)
   const portMeshesData = useMemo(() => {
     return portsData.map((port) => {
-      const idx = port.portNumber - 1; // 0..47
-      const col = Math.floor(idx / 2); // 0..23
-      const bankIdx = Math.floor(col / 6); // 0..3 (4 distinct 12-port banks)
-      const isTopRow = idx % 2 === 0; // Odd ports (1, 3, 5...) on top, Even (2, 4, 6...) on bottom
+      const idx = port.portNumber - 1;
+      const col = Math.floor(idx / 2);
+      const bankIdx = Math.floor(col / 6);
+      const isTopRow = idx % 2 === 0;
       const x = -5.65 + col * 0.36 + bankIdx * 0.24;
       const y = isTopRow ? 0.24 : -0.24;
       return {
@@ -452,39 +459,69 @@ function SwitchScene({
     });
   }, [portsData]);
 
-  // Any fan or PSU fault triggers Amber SYST LED
   const hasHardwareFault =
     Object.values(fanFaults).some(Boolean) || psuStates.psu1 === 'fault' || psuStates.psu2 === 'fault';
 
   const isSelectedComponent = (id) =>
     selectedItem?.type === 'component' && selectedItem?.id === id;
 
+  // Dynamic lighting multiplier based on backdrop brightness slider
+  const lightBoost = 0.85 + backdropBrightness * 0.85;
+
   return (
     <>
-      <PerspectiveCamera makeDefault position={[11, 7.5, 14]} fov={38} />
+      <PerspectiveCamera makeDefault position={[8.8, 4.8, 11.2]} fov={34} />
       <OrbitControls
         ref={controlsRef}
         enableDamping
         dampingFactor={0.06}
-        minDistance={3.2}
-        maxDistance={32}
+        minDistance={2.8}
+        maxDistance={28}
         maxPolarAngle={Math.PI * 0.92}
       />
       <CameraRig cameraPreset={cameraPreset} controlsRef={controlsRef} />
 
-      {/* Studio Multi-Point Lighting Setup */}
-      <ambientLight intensity={0.85} />
-      <directionalLight position={[12, 18, 14]} intensity={1.5} castShadow />
-      <directionalLight position={[-14, 10, -14]} intensity={0.9} color="#e2e8f0" />
-      <pointLight position={[0, 3, 10]} intensity={0.9} color="#60a5fa" />
-      <pointLight position={[0, 3, -10]} intensity={0.8} color="#34d399" />
+      {/* 360° Studio Multi-Point & Rim Lighting Setup (Illuminates Front Faceplate, Sides, Top & Rear) */}
+      <ambientLight intensity={1.25 * lightBoost} />
+      <hemisphereLight
+        skyColor="#f8fafc"
+        groundColor="#475569"
+        intensity={1.1 * lightBoost}
+      />
+      {/* Key Overhead & Front-Right Light */}
+      <directionalLight position={[12, 18, 16]} intensity={1.85 * lightBoost} castShadow />
+      {/* Dedicated Front Faceplate Fill Light (makes all 48 RJ-45 ports & Uplink bay pop clearly) */}
+      <directionalLight position={[0, 2.5, 18]} intensity={1.65 * lightBoost} color="#f1f5f9" />
+      {/* Dedicated Right & Left Chassis Profile Rim Lights */}
+      <directionalLight position={[18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
+      <directionalLight position={[-18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
+      {/* Dedicated Rear Bulkhead Fill Light */}
+      <directionalLight position={[0, 5, -18]} intensity={1.35 * lightBoost} color="#e2e8f0" />
+
+      {/* 3D Studio CAD Reference Floor Grid */}
+      {showStudioGrid && (
+        <Grid
+          position={[0, -2.05, 0]}
+          args={[38, 38]}
+          cellSize={1}
+          cellThickness={0.6}
+          cellColor={backdropBrightness > 0.7 ? '#64748b' : '#334155'}
+          sectionSize={5}
+          sectionThickness={1.1}
+          sectionColor={backdropBrightness > 0.7 ? '#3b82f6' : '#38bdf8'}
+          fadeDistance={30}
+          fadeStrength={1.2}
+          infiniteGrid
+        />
+      )}
 
       {/* Thermal Airflow Streamlines */}
       <AirflowParticles visible={showAirflow} fanFaults={fanFaults} />
 
-      <group name="Cisco_C9300_48_Assembly">
+      <group name="Cisco_C9300_48_Assembly" scale={chassisScale}>
         {/* =========================================================
             1. CHASSIS BASE TRAY & SIDE VENTILATION WALLS
+            (Authentic Cisco Catalyst Powder-Coated Gunmetal/Silver-Gray)
            ========================================================= */}
         <group
           onClick={(e) => {
@@ -501,9 +538,9 @@ function SwitchScene({
           <mesh position={[0, -0.82, 0]} receiveShadow>
             <boxGeometry args={[17.5, 0.1, 12.0]} />
             <meshStandardMaterial
-              color={isSelectedComponent('chassis-main') ? '#1e3a8a' : '#141a26'}
-              metalness={0.82}
-              roughness={0.35}
+              color={isSelectedComponent('chassis-main') ? '#3b82f6' : '#3b495e'}
+              metalness={0.48}
+              roughness={0.38}
             />
           </mesh>
 
@@ -513,9 +550,9 @@ function SwitchScene({
               <mesh>
                 <boxGeometry args={[0.1, 1.65, 12.0]} />
                 <meshStandardMaterial
-                  color="#1a2232"
-                  metalness={0.8}
-                  roughness={0.38}
+                  color="#475569"
+                  metalness={0.48}
+                  roughness={0.36}
                   transparent={xrayMode}
                   opacity={xrayMode ? 0.35 : 1}
                 />
@@ -524,22 +561,32 @@ function SwitchScene({
               {[-3.2, -1.6, 0, 1.6, 3.2].map((zVent, vIdx) => (
                 <mesh key={vIdx} position={[xSide > 0 ? 0.06 : -0.06, 0, zVent]}>
                   <boxGeometry args={[0.02, 0.95, 1.1]} />
-                  <meshStandardMaterial color="#060911" roughness={0.9} />
+                  <meshStandardMaterial color="#0f172a" roughness={0.85} />
                 </mesh>
               ))}
             </group>
           ))}
 
-          {/* Front Dark Charcoal Bezel Plate */}
+          {/* Front Contrast Bezel Plate (Medium-Dark Slate so Port Cages & Edge Seams Pop) */}
           <mesh position={[0, 0, 5.96]}>
             <boxGeometry args={[17.48, 1.68, 0.1]} />
-            <meshStandardMaterial color="#0f1522" metalness={0.65} roughness={0.4} />
+            <meshStandardMaterial color="#1e293b" metalness={0.42} roughness={0.42} />
+          </mesh>
+
+          {/* Top & Bottom Front Bezel Silver Trim Rails */}
+          <mesh position={[0, 0.82, 6.01]}>
+            <boxGeometry args={[17.48, 0.05, 0.06]} />
+            <meshStandardMaterial color="#64748b" metalness={0.6} roughness={0.3} />
+          </mesh>
+          <mesh position={[0, -0.82, 6.01]}>
+            <boxGeometry args={[17.48, 0.05, 0.06]} />
+            <meshStandardMaterial color="#64748b" metalness={0.6} roughness={0.3} />
           </mesh>
 
           {/* Rear Steel Bulkhead Plate */}
           <mesh position={[0, 0, -5.96]}>
             <boxGeometry args={[17.48, 1.68, 0.1]} />
-            <meshStandardMaterial color="#1e293b" metalness={0.75} roughness={0.35} />
+            <meshStandardMaterial color="#3b495e" metalness={0.5} roughness={0.35} />
           </mesh>
         </group>
 
@@ -556,18 +603,18 @@ function SwitchScene({
           <mesh castShadow>
             <boxGeometry args={[17.5, 0.08, 12.0]} />
             <meshStandardMaterial
-              color="#1c2536"
-              metalness={0.8}
-              roughness={0.32}
+              color="#475569"
+              metalness={0.5}
+              roughness={0.35}
               transparent={xrayMode || explodeFactor > 0.05}
-              opacity={xrayMode ? 0.18 : explodeFactor > 0.05 ? 0.82 : 1}
+              opacity={xrayMode ? 0.18 : explodeFactor > 0.05 ? 0.85 : 1}
             />
           </mesh>
           {/* Top Lid Stamped Cisco Decal Strip */}
           {!xrayMode && (
             <mesh position={[-6.5, 0.05, 4.8]} rotation={[-Math.PI / 2, 0, 0]}>
               <planeGeometry args={[3.4, 0.8]} />
-              <meshStandardMaterial color="#0ea5e9" emissive="#0284c7" emissiveIntensity={0.25} />
+              <meshStandardMaterial color="#0ea5e9" emissive="#0284c7" emissiveIntensity={0.3} />
             </mesh>
           )}
         </group>
@@ -579,7 +626,7 @@ function SwitchScene({
           {/* Main Multilayer Enterprise Green/Teal PCB Motherboard */}
           <mesh position={[0, 0, 0]}>
             <boxGeometry args={[16.8, 0.08, 11.4]} />
-            <meshStandardMaterial color="#064e3b" metalness={0.35} roughness={0.55} />
+            <meshStandardMaterial color="#059669" metalness={0.3} roughness={0.5} />
           </mesh>
 
           {/* Cisco UADP 2.0 Programmable ASIC + Copper Skived Heatsink */}
@@ -595,32 +642,30 @@ function SwitchScene({
             }}
             onPointerOut={() => setHoveredLabel(null)}
           >
-            {/* Substrate Package */}
             <mesh position={[0, -0.18, 0]}>
               <boxGeometry args={[3.2, 0.12, 3.2]} />
               <meshStandardMaterial
-                color={isSelectedComponent('internal-uadp-asic') ? '#3b82f6' : '#0f172a'}
-                metalness={0.7}
-                roughness={0.25}
+                color={isSelectedComponent('internal-uadp-asic') ? '#3b82f6' : '#1e293b'}
+                metalness={0.6}
+                roughness={0.28}
               />
             </mesh>
-            {/* Copper Heatsink Base & Cooling Fins */}
             <mesh position={[0, 0.02, 0]}>
               <boxGeometry args={[2.8, 0.28, 2.8]} />
               <meshStandardMaterial
                 color={isSelectedComponent('internal-uadp-asic') ? '#60a5fa' : '#d97706'}
-                metalness={0.88}
-                roughness={0.22}
+                metalness={0.8}
+                roughness={0.25}
               />
             </mesh>
             {[-1.1, -0.75, -0.4, -0.05, 0.3, 0.65, 1.0].map((fx, fIdx) => (
               <mesh key={fIdx} position={[fx, 0.26, 0]}>
                 <boxGeometry args={[0.08, 0.32, 2.75]} />
-                <meshStandardMaterial color="#f59e0b" metalness={0.9} roughness={0.2} />
+                <meshStandardMaterial color="#f59e0b" metalness={0.85} roughness={0.22} />
               </mesh>
             ))}
             {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.85, 0]} center distanceFactor={14}>
+              <Html position={[0, 0.85, 0]} center distanceFactor={13}>
                 <div className="px-2 py-0.5 rounded bg-amber-950/90 border border-amber-500/50 text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg pointer-events-none">
                   Cisco UADP 2.0 ASIC (46°C)
                 </div>
@@ -644,20 +689,19 @@ function SwitchScene({
             <mesh>
               <boxGeometry args={[2.4, 0.36, 2.4]} />
               <meshStandardMaterial
-                color={isSelectedComponent('internal-x86-cpu') ? '#3b82f6' : '#94a3b8'}
-                metalness={0.85}
+                color={isSelectedComponent('internal-x86-cpu') ? '#3b82f6' : '#cbd5e1'}
+                metalness={0.7}
                 roughness={0.25}
               />
             </mesh>
-            {/* 4x DDR4 Memory DIMMs */}
             {[-0.6, -0.2, 0.2, 0.6].map((dz, dIdx) => (
               <mesh key={dIdx} position={[-1.7, 0.1, dz]}>
                 <boxGeometry args={[0.12, 0.42, 1.8]} />
-                <meshStandardMaterial color="#10b981" metalness={0.5} roughness={0.3} />
+                <meshStandardMaterial color="#10b981" metalness={0.4} roughness={0.3} />
               </mesh>
             ))}
             {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.75, 0]} center distanceFactor={14}>
+              <Html position={[0, 0.75, 0]} center distanceFactor={13}>
                 <div className="px-2 py-0.5 rounded bg-blue-950/90 border border-blue-500/50 text-[10px] font-mono text-blue-200 whitespace-nowrap shadow-lg pointer-events-none">
                   x86 CPU + 8GB DRAM (IOS-XE / IOx)
                 </div>
@@ -681,20 +725,19 @@ function SwitchScene({
             <mesh>
               <boxGeometry args={[9.4, 0.22, 2.1]} />
               <meshStandardMaterial
-                color={isSelectedComponent('internal-poe-board') ? '#2563eb' : '#0f766e'}
-                metalness={0.45}
+                color={isSelectedComponent('internal-poe-board') ? '#2563eb' : '#0d9488'}
+                metalness={0.4}
                 roughness={0.4}
               />
             </mesh>
-            {/* Row of 12 Isolation Transformer Magnetic Modules */}
             {Array.from({ length: 12 }, (_, mIdx) => (
               <mesh key={mIdx} position={[-4.1 + mIdx * 0.74, 0.2, 0.3]}>
                 <boxGeometry args={[0.52, 0.24, 0.85]} />
-                <meshStandardMaterial color="#111827" roughness={0.4} />
+                <meshStandardMaterial color="#1e293b" roughness={0.4} />
               </mesh>
             ))}
             {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.65, 0]} center distanceFactor={14}>
+              <Html position={[0, 0.65, 0]} center distanceFactor={13}>
                 <div className="px-2 py-0.5 rounded bg-teal-950/90 border border-teal-500/50 text-[10px] font-mono text-teal-200 whitespace-nowrap shadow-lg pointer-events-none">
                   UPOE+ PSE Daughterboard & Magnetics
                 </div>
@@ -720,22 +763,20 @@ function SwitchScene({
             }}
             onPointerOut={() => setHoveredLabel(null)}
           >
-            {/* Front Flange Ear */}
             <mesh position={[dir * 0.22, 0, 0.68]}>
               <boxGeometry args={[0.75, 1.68, 0.12]} />
               <meshStandardMaterial
-                color={isSelectedComponent('rack-brackets') ? '#3b82f6' : '#475569'}
-                metalness={0.85}
-                roughness={0.28}
+                color={isSelectedComponent('rack-brackets') ? '#3b82f6' : '#94a3b8'}
+                metalness={0.6}
+                roughness={0.3}
               />
             </mesh>
-            {/* Side Bracket Plate Bolted to Chassis */}
             <mesh position={[-dir * 0.12, 0, -0.2]}>
               <boxGeometry args={[0.1, 1.62, 1.85]} />
               <meshStandardMaterial
-                color={isSelectedComponent('rack-brackets') ? '#3b82f6' : '#475569'}
-                metalness={0.85}
-                roughness={0.28}
+                color={isSelectedComponent('rack-brackets') ? '#3b82f6' : '#94a3b8'}
+                metalness={0.6}
+                roughness={0.3}
               />
             </mesh>
           </group>
@@ -761,13 +802,13 @@ function SwitchScene({
           <mesh>
             <cylinderGeometry args={[0.13, 0.13, 0.08, 20]} rotation={[Math.PI / 2, 0, 0]} />
             <meshStandardMaterial
-              color={beaconActive ? '#38bdf8' : '#0284c7'}
+              color={beaconActive ? '#38bdf8' : '#0ea5e9'}
               emissive="#0ea5e9"
-              emissiveIntensity={beaconActive ? 3.5 : 0.6}
+              emissiveIntensity={beaconActive ? 3.5 : 0.8}
             />
           </mesh>
           {showLabels && (
-            <Html position={[-0.3, 0.65, 0]} center distanceFactor={14}>
+            <Html position={[-0.3, 0.65, 0]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-sky-500/40 text-[10px] font-mono text-sky-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #1 UID Beacon
               </div>
@@ -791,14 +832,14 @@ function SwitchScene({
         >
           <RoundedBox args={[0.28, 0.24, 0.12]} radius={0.04}>
             <meshStandardMaterial
-              color={isSelectedComponent('mode-button') ? '#3b82f6' : '#0284c7'}
-              metalness={0.5}
+              color={isSelectedComponent('mode-button') ? '#38bdf8' : '#0284c7'}
+              metalness={0.4}
               roughness={0.3}
             />
           </RoundedBox>
         </group>
 
-        {/* #3 Status LEDs Cluster (SYST, ACTV, STAT, SPEED, DUPLX, STACK, PoE, S-PWR) */}
+        {/* #3 Status LEDs Cluster */}
         <group
           position={[-7.55, 0.18, 6.03]}
           onClick={(e) => {
@@ -824,7 +865,7 @@ function SwitchScene({
             <mesh key={led.id} position={[led.pos[0], led.pos[1], 0]}>
               <sphereGeometry args={[0.045, 10, 10]} />
               <meshStandardMaterial
-                color={led.fault ? '#f59e0b' : led.active ? '#10b981' : '#1e293b'}
+                color={led.fault ? '#f59e0b' : led.active ? '#10b981' : '#475569'}
                 emissive={led.fault ? '#f59e0b' : led.active ? '#10b981' : '#000000'}
                 emissiveIntensity={led.active || led.fault ? 2.4 : 0}
               />
@@ -848,12 +889,11 @@ function SwitchScene({
           <mesh>
             <boxGeometry args={[0.3, 0.22, 0.08]} />
             <meshStandardMaterial
-              color={isSelectedComponent('usb-mini-console') ? '#3b82f6' : '#090d16'}
-              metalness={0.8}
+              color={isSelectedComponent('usb-mini-console') ? '#3b82f6' : '#64748b'}
+              metalness={0.6}
               roughness={0.3}
             />
           </mesh>
-          {/* Console LED */}
           <mesh position={[0, 0.18, 0]}>
             <sphereGeometry args={[0.032, 8, 8]} />
             <meshStandardMaterial color="#10b981" emissive="#10b981" emissiveIntensity={1.6} />
@@ -873,16 +913,14 @@ function SwitchScene({
           }}
           onPointerOut={() => setHoveredLabel(null)}
         >
-          {/* Outer USB Shield */}
           <mesh>
             <boxGeometry args={[0.52, 0.26, 0.09]} />
             <meshStandardMaterial
-              color={isSelectedComponent('usb-type-a') ? '#3b82f6' : '#94a3b8'}
-              metalness={0.9}
-              roughness={0.2}
+              color={isSelectedComponent('usb-type-a') ? '#3b82f6' : '#cbd5e1'}
+              metalness={0.7}
+              roughness={0.25}
             />
           </mesh>
-          {/* USB 3.0 Blue Tongue */}
           <mesh position={[0, 0.03, 0.02]}>
             <boxGeometry args={[0.42, 0.07, 0.08]} />
             <meshStandardMaterial color="#0284c7" />
@@ -900,11 +938,11 @@ function SwitchScene({
               <group key={bankIdx}>
                 <mesh position={[bankCenterX, 0.56, 6.01]}>
                   <boxGeometry args={[2.18, 0.04, 0.04]} />
-                  <meshStandardMaterial color="#eab308" emissive="#ca8a04" emissiveIntensity={0.4} />
+                  <meshStandardMaterial color="#eab308" emissive="#ca8a04" emissiveIntensity={0.6} />
                 </mesh>
                 <mesh position={[bankCenterX, -0.56, 6.01]}>
                   <boxGeometry args={[2.18, 0.04, 0.04]} />
-                  <meshStandardMaterial color="#eab308" emissive="#ca8a04" emissiveIntensity={0.4} />
+                  <meshStandardMaterial color="#eab308" emissive="#ca8a04" emissiveIntensity={0.6} />
                 </mesh>
               </group>
             );
@@ -936,7 +974,7 @@ function SwitchScene({
                   setHoveredLabel(null);
                 }}
               >
-                {/* Metallic RJ-45 Shield Cage */}
+                {/* Metallic RJ-45 Shield Cage (Brighter brushed nickel/steel so every port stands out!) */}
                 <mesh>
                   <boxGeometry args={[0.31, 0.34, 0.12]} />
                   <meshStandardMaterial
@@ -946,20 +984,20 @@ function SwitchScene({
                         : isHovered
                         ? '#60a5fa'
                         : port.status === 'up'
-                        ? '#475569'
-                        : '#1e293b'
+                        ? '#94a3b8'
+                        : '#64748b'
                     }
                     emissive={isSelected ? '#0284c7' : isHovered ? '#1d4ed8' : '#000000'}
                     emissiveIntensity={isSelected ? 1.4 : isHovered ? 0.9 : 0}
-                    metalness={0.8}
-                    roughness={0.25}
+                    metalness={0.55}
+                    roughness={0.3}
                   />
                 </mesh>
 
                 {/* Inner Dark RJ-45 Jack Cavity */}
                 <mesh position={[0, 0, 0.03]}>
-                  <boxGeometry args={[0.23, 0.24, 0.08]} />
-                  <meshStandardMaterial color="#050811" roughness={0.9} />
+                  <boxGeometry args={[0.22, 0.23, 0.08]} />
+                  <meshStandardMaterial color="#0f172a" roughness={0.85} />
                 </mesh>
 
                 {/* Optional Plugged-In Ethernet Patch Boot */}
@@ -984,11 +1022,11 @@ function SwitchScene({
 
                 {/* Individual Port Status/Mode LED */}
                 <mesh position={[0, port.isTopRow ? 0.22 : -0.22, 0.04]}>
-                  <sphereGeometry args={[0.034, 8, 8]} />
+                  <sphereGeometry args={[0.035, 8, 8]} />
                   <meshStandardMaterial
                     color={ledColor}
                     emissive={ledColor}
-                    emissiveIntensity={ledColor === '#1e293b' ? 0 : 2.5}
+                    emissiveIntensity={ledColor === '#334155' ? 0 : 2.5}
                   />
                 </mesh>
               </group>
@@ -996,7 +1034,7 @@ function SwitchScene({
           })}
 
           {showLabels && (
-            <Html position={[-1.2, 1.05, 6.05]} center distanceFactor={14}>
+            <Html position={[-1.2, 1.05, 6.05]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-blue-500/40 text-[10px] font-mono text-blue-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #5 48× RJ-45 Downlink Ports (Gi1/0/1–48)
               </div>
@@ -1019,18 +1057,18 @@ function SwitchScene({
           }}
           onPointerOut={() => setHoveredLabel(null)}
         >
-          {/* Internal Network Module PCB Card (Visible when Exploded) */}
+          {/* Internal Network Module PCB Card */}
           <mesh position={[0, -0.1, -1.55]}>
             <boxGeometry args={[4.1, 0.1, 3.0]} />
-            <meshStandardMaterial color="#065f46" metalness={0.4} roughness={0.5} />
+            <meshStandardMaterial color="#059669" metalness={0.35} roughness={0.5} />
           </mesh>
 
           {/* Uplink Module Front Faceplate */}
           <RoundedBox args={[4.35, 1.42, 0.16]} radius={0.04} smoothness={2}>
             <meshStandardMaterial
-              color={isSelectedComponent('uplink-module') ? '#2563eb' : '#283548'}
-              metalness={0.85}
-              roughness={0.25}
+              color={isSelectedComponent('uplink-module') ? '#2563eb' : '#475569'}
+              metalness={0.55}
+              roughness={0.3}
             />
           </RoundedBox>
 
@@ -1038,11 +1076,11 @@ function SwitchScene({
           {[-1.98, 1.98].map((tx, idx) => (
             <mesh key={idx} position={[tx, 0, 0.14]} rotation={[Math.PI / 2, 0, 0]}>
               <cylinderGeometry args={[0.1, 0.1, 0.16, 16]} />
-              <meshStandardMaterial color="#94a3b8" metalness={0.95} roughness={0.15} />
+              <meshStandardMaterial color="#cbd5e1" metalness={0.8} roughness={0.2} />
             </mesh>
           ))}
 
-          {/* Dynamic SFP+ / QSFP+ / SFP28 Cage Geometry Based on Selected Network Module */}
+          {/* Dynamic SFP+ / QSFP+ / SFP28 Cage Geometry */}
           {networkModuleId === 'C9300-NM-8X' &&
             Array.from({ length: 8 }, (_, idx) => {
               const col = Math.floor(idx / 2);
@@ -1052,13 +1090,17 @@ function SwitchScene({
               return (
                 <group key={idx} position={[x, y, 0.06]}>
                   <mesh>
-                    <boxGeometry args={[0.62, 0.36, 0.12]} />
-                    <meshStandardMaterial color="#090d16" metalness={0.8} roughness={0.3} />
+                    <boxGeometry args={[0.64, 0.38, 0.12]} />
+                    <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.3} />
                   </mesh>
-                  <mesh position={[0, isTop ? 0.22 : -0.22, 0.02]}>
-                    <sphereGeometry args={[0.032, 8, 8]} />
+                  <mesh position={[0, 0, 0.03]}>
+                    <boxGeometry args={[0.52, 0.26, 0.08]} />
+                    <meshStandardMaterial color="#0f172a" roughness={0.85} />
+                  </mesh>
+                  <mesh position={[0, isTop ? 0.23 : -0.23, 0.02]}>
+                    <sphereGeometry args={[0.034, 8, 8]} />
                     <meshStandardMaterial
-                      color={idx < 4 ? '#10b981' : '#1e293b'}
+                      color={idx < 4 ? '#10b981' : '#334155'}
                       emissive={idx < 4 ? '#10b981' : '#000000'}
                       emissiveIntensity={idx < 4 ? 2.2 : 0}
                     />
@@ -1072,7 +1114,7 @@ function SwitchScene({
               <group key={idx} position={[x, 0, 0.06]}>
                 <mesh>
                   <boxGeometry args={[0.65, 0.45, 0.12]} />
-                  <meshStandardMaterial color="#090d16" metalness={0.8} roughness={0.3} />
+                  <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.3} />
                 </mesh>
                 <mesh position={[0, 0.32, 0.02]}>
                   <sphereGeometry args={[0.038, 8, 8]} />
@@ -1086,7 +1128,7 @@ function SwitchScene({
               <group key={idx} position={[x, 0, 0.06]}>
                 <mesh>
                   <boxGeometry args={[1.15, 0.56, 0.14]} />
-                  <meshStandardMaterial color="#090d16" metalness={0.85} roughness={0.25} />
+                  <meshStandardMaterial color="#94a3b8" metalness={0.6} roughness={0.3} />
                 </mesh>
                 <mesh position={[0, 0.38, 0.02]}>
                   <sphereGeometry args={[0.042, 8, 8]} />
@@ -1096,7 +1138,7 @@ function SwitchScene({
             ))}
 
           {showLabels && (
-            <Html position={[0, 1.05, 0.1]} center distanceFactor={14}>
+            <Html position={[0, 1.05, 0.1]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-indigo-500/40 text-[10px] font-mono text-indigo-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #6 Modular Uplink ({networkModuleId})
               </div>
@@ -1135,7 +1177,6 @@ function SwitchScene({
         {/* =========================================================
             9. REAR PANEL: STACKWISE-480 (#10) & STACKPOWER (#7) PORTS
            ========================================================= */}
-        {/* StackWise-480 Data Stacking Ports */}
         <group
           position={[-0.75, 0.26, -6.04]}
           onClick={(e) => {
@@ -1152,26 +1193,25 @@ function SwitchScene({
             <group key={idx} position={[sx, 0, 0]}>
               <RoundedBox args={[1.15, 0.42, 0.18]} radius={0.04}>
                 <meshStandardMaterial
-                  color={isSelectedComponent('stackwise-ports') ? '#3b82f6' : '#94a3b8'}
-                  metalness={0.9}
-                  roughness={0.2}
+                  color={isSelectedComponent('stackwise-ports') ? '#3b82f6' : '#cbd5e1'}
+                  metalness={0.7}
+                  roughness={0.25}
                 />
               </RoundedBox>
               <mesh position={[0, 0, -0.06]}>
                 <boxGeometry args={[0.76, 0.22, 0.1]} />
-                <meshStandardMaterial color="#090d16" />
+                <meshStandardMaterial color="#0f172a" />
               </mesh>
-              {/* Dual Thumbscrew Posts */}
               {[-0.46, 0.46].map((boltX, bIdx) => (
                 <mesh key={bIdx} position={[boltX, 0, -0.08]} rotation={[Math.PI / 2, 0, 0]}>
                   <cylinderGeometry args={[0.06, 0.06, 0.12, 12]} />
-                  <meshStandardMaterial color="#cbd5e1" metalness={0.95} roughness={0.15} />
+                  <meshStandardMaterial color="#e2e8f0" metalness={0.85} roughness={0.18} />
                 </mesh>
               ))}
             </group>
           ))}
           {showLabels && (
-            <Html position={[0, 0.9, -0.1]} center distanceFactor={14}>
+            <Html position={[0, 0.9, -0.1]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-purple-500/40 text-[10px] font-mono text-purple-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #10 StackWise-480 & #7 StackPower
               </div>
@@ -1203,13 +1243,13 @@ function SwitchScene({
                       ? '#10b981'
                       : '#eab308'
                   }
-                  metalness={0.5}
+                  metalness={0.45}
                   roughness={0.35}
                 />
               </RoundedBox>
               <mesh position={[0, 0, -0.06]}>
                 <boxGeometry args={[0.72, 0.24, 0.1]} />
-                <meshStandardMaterial color="#090d16" />
+                <meshStandardMaterial color="#0f172a" />
               </mesh>
             </group>
           ))}
@@ -1267,26 +1307,23 @@ function SwitchScene({
           }}
           onPointerOut={() => setHoveredLabel(null)}
         >
-          {/* #2 Pluggable USB 3.0 SSD Module Slot (120GB / 240GB) */}
           <RoundedBox args={[0.92, 0.52, 0.22]} radius={0.03} position={[-0.78, 0.26, 0]}>
             <meshStandardMaterial
-              color={isSelectedComponent('rear-mgmt-block') ? '#3b82f6' : '#334155'}
-              metalness={0.75}
+              color={isSelectedComponent('rear-mgmt-block') ? '#3b82f6' : '#64748b'}
+              metalness={0.55}
               roughness={0.3}
             />
           </RoundedBox>
 
-          {/* #4 RJ-45 Serial Console Port (Top) & #5 RJ-45 10/100/1000 MGMT Port Gi0/0 (Bottom) */}
           <mesh position={[0.15, 0.28, 0]}>
             <boxGeometry args={[0.46, 0.38, 0.14]} />
-            <meshStandardMaterial color="#0284c7" metalness={0.6} roughness={0.3} />
+            <meshStandardMaterial color="#0284c7" metalness={0.5} roughness={0.3} />
           </mesh>
           <mesh position={[0.15, -0.26, 0]}>
             <boxGeometry args={[0.46, 0.38, 0.14]} />
-            <meshStandardMaterial color="#eab308" metalness={0.6} roughness={0.3} />
+            <meshStandardMaterial color="#eab308" metalness={0.5} roughness={0.3} />
           </mesh>
 
-          {/* #3 Rear Blue BEACON LED (Synced with Front UID Button) */}
           <mesh position={[-0.78, -0.32, -0.05]}>
             <sphereGeometry args={[0.065, 12, 12]} />
             <meshStandardMaterial
@@ -1296,14 +1333,13 @@ function SwitchScene({
             />
           </mesh>
 
-          {/* #1 Dual-Hole Copper Grounding Lug */}
           <mesh position={[0.95, -0.25, 0]}>
             <boxGeometry args={[0.62, 0.32, 0.12]} />
-            <meshStandardMaterial color="#d97706" metalness={0.9} roughness={0.2} />
+            <meshStandardMaterial color="#d97706" metalness={0.85} roughness={0.2} />
           </mesh>
 
           {showLabels && (
-            <Html position={[0, 1.05, -0.1]} center distanceFactor={14}>
+            <Html position={[0, 1.05, -0.1]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-amber-500/40 text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #1–5 Console, Gi0/0 Mgmt & 240G SSD
               </div>
@@ -1312,7 +1348,7 @@ function SwitchScene({
         </group>
       </group>
 
-      <ContactShadows position={[0, -2.2, 0]} opacity={0.55} scale={32} blur={2.4} far={6} />
+      <ContactShadows position={[0, -2.02, 0]} opacity={0.5} scale={32} blur={2.4} far={6} />
 
       {/* Live 3D Hover Tooltip Banner */}
       {hoveredLabel && (
@@ -1327,15 +1363,42 @@ function SwitchScene({
 }
 
 export default function CiscoChassis3D(props) {
+  const brightness = props.backdropBrightness ?? 0.65;
+
+  // Compute dynamic radial studio gradient based on user's Backdrop Brightness slider (0.0 = Deep Dark, 0.65 = Studio Slate, 1.0 = Light Showroom)
+  const backdropStyle = useMemo(() => {
+    const centerColor = new THREE.Color().lerpColors(
+      new THREE.Color('#0f172a'),
+      new THREE.Color('#cbd5e1'),
+      brightness
+    );
+    const midColor = new THREE.Color().lerpColors(
+      new THREE.Color('#090d18'),
+      new THREE.Color('#94a3b8'),
+      brightness
+    );
+    const edgeColor = new THREE.Color().lerpColors(
+      new THREE.Color('#050811'),
+      new THREE.Color('#475569'),
+      brightness
+    );
+    return {
+      background: `radial-gradient(ellipse at 50% 45%, #${centerColor.getHexString()} 0%, #${midColor.getHexString()} 55%, #${edgeColor.getHexString()} 100%)`
+    };
+  }, [brightness]);
+
   return (
-    <div className="w-full h-full relative bg-gradient-to-b from-[#080d1a] via-[#0b1326] to-[#060913] rounded-xl overflow-hidden border border-slate-800/90 shadow-2xl">
-      {/* Subtle Cyber Reference Grid Background */}
+    <div
+      className="w-full h-full relative rounded-xl overflow-hidden border border-slate-700/80 shadow-2xl transition-colors duration-200"
+      style={backdropStyle}
+    >
+      {/* Subtle Studio Dot Matrix Pattern */}
       <div
-        className="absolute inset-0 opacity-15 pointer-events-none"
+        className="absolute inset-0 opacity-20 pointer-events-none"
         style={{
           backgroundImage:
-            'radial-gradient(circle at 1px 1px, rgba(56, 189, 248, 0.35) 1px, transparent 0)',
-          backgroundSize: '24px 24px'
+            'radial-gradient(circle at 1px 1px, rgba(148, 163, 184, 0.45) 1px, transparent 0)',
+          backgroundSize: '22px 22px'
         }}
       />
 
