@@ -15,6 +15,7 @@ import {
   ChevronRight,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRightClose,
   PanelRightOpen,
   Terminal,
   CheckCircle2,
@@ -237,12 +238,20 @@ export default function LeftNavInventoryDrawer({
           onClick={() => onOpenHwDrawerForDevice(parsedSwitchData?.device?.serialNumber)}
           className={`w-9 h-9 rounded-lg border flex items-center justify-center cursor-pointer transition ${
             isRightInspectorOpen
-              ? 'bg-sky-500/25 text-sky-200 border-sky-400'
+              ? 'bg-sky-500 text-slate-950 border-sky-300 shadow-lg shadow-sky-500/25'
               : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
           }`}
-          title="Toggle Right Hardware (HW) Drawer for Active Switch"
+          title={
+            isRightInspectorOpen
+              ? 'Collapse Right Hardware (HW) Drawer'
+              : 'Open Right Hardware (HW) Drawer for Active Switch'
+          }
         >
-          <PanelRightOpen className="w-4 h-4" />
+          {isRightInspectorOpen ? (
+            <PanelRightClose className="w-4 h-4" />
+          ) : (
+            <PanelRightOpen className="w-4 h-4" />
+          )}
         </button>
       </aside>
     );
@@ -329,10 +338,23 @@ export default function LeftNavInventoryDrawer({
                 ? 'bg-sky-500 text-slate-950 border-sky-300'
                 : 'bg-sky-500/20 text-sky-300 border-sky-500/40 hover:bg-sky-500/30'
             }`}
-            title="Open Hardware & Port Inspector Drawer for this Device"
+            title={
+              isRightInspectorOpen
+                ? 'Collapse Right Hardware & Port Inspector Drawer'
+                : 'Open Right Hardware & Port Inspector Drawer for this Device'
+            }
           >
-            <PanelRightOpen className="w-3 h-3" />
-            {isRightInspectorOpen ? 'HW Open' : 'HW Drawer'}
+            {isRightInspectorOpen ? (
+              <>
+                <PanelRightClose className="w-3 h-3" />
+                Hide HW
+              </>
+            ) : (
+              <>
+                <PanelRightOpen className="w-3 h-3" />
+                HW Drawer
+              </>
+            )}
           </button>
         </div>
 

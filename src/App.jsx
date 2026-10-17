@@ -204,10 +204,19 @@ export default function App() {
   };
 
   const handleOpenHwDrawerForDevice = (serialNumber) => {
-    if (serialNumber && serialNumber !== 'UNPOLLED') {
+    const currentSerial = parsedSwitchData?.device?.serialNumber;
+    const isSwitchingDevice =
+      serialNumber &&
+      serialNumber !== 'UNPOLLED' &&
+      serialNumber !== currentSerial &&
+      savedDevices.some((d) => d.serial_number === serialNumber);
+
+    if (isSwitchingDevice) {
       handleSelectSavedDevice(serialNumber);
+      setIsRightInspectorOpen(true);
+    } else {
+      setIsRightInspectorOpen((prev) => !prev);
     }
-    setIsRightInspectorOpen(true);
   };
 
   const handleOpenLivePoll = (targetIp = '', targetHostname = '') => {
