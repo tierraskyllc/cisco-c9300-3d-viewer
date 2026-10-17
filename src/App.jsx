@@ -588,6 +588,8 @@ export default function App() {
                 totalPoeWatts={totalPoeWatts}
                 poeBudgetWatts={poeBudgetWatts}
                 parsedSwitchData={parsedSwitchData}
+                savedDevices={savedDevices}
+                onSelectSavedDevice={handleSelectSavedDevice}
                 onPollNeighbor={handleOpenLivePoll}
               />
             </div>

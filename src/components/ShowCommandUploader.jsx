@@ -4,6 +4,10 @@ import {
   SAMPLE_CAMPUS_SHOW_OUTPUTS
 } from '../utils/ciscoCliParser';
 import {
+  GLOBAL_SITES,
+  inferSiteCode
+} from '../data/globalNetworkData';
+import {
   Upload,
   Database,
   CheckCircle2,
@@ -17,7 +21,8 @@ import {
   Play,
   AlertCircle,
   RefreshCw,
-  Code2
+  Code2,
+  Globe
 } from 'lucide-react';
 
 // In-memory session vault (never persisted to disk or localStorage)
@@ -94,8 +99,8 @@ export default function ShowCommandUploader({
 }) {
   const [studioMode, setStudioMode] = useState(initialMode); // 'manual' | 'ssh' | 'self-push'
   const [activeTab, setActiveTab] = useState('showIntStatus');
-  const [siteName, setSiteName] = useState('FDU Metro Campus');
-  const [buildingName, setBuildingName] = useState('Building 4 — IDF-2');
+  const [siteName, setSiteName] = useState('Metro');
+  const [buildingName, setBuildingName] = useState('Bancroft Hall — MDF/IDF');
   const [rawInputs, setRawInputs] = useState(() => ({
     combinedText: '',
     ...SAMPLE_CAMPUS_SHOW_OUTPUTS
@@ -130,9 +135,16 @@ export default function ShowCommandUploader({
       } else if (activeDeviceData?.device?.mgmtIp) {
         setSshHost(activeDeviceData.device.mgmtIp);
       }
+      const detectedSite = inferSiteCode({
+        hostname: initialTargetHostname || activeDeviceData?.device?.hostname,
+        mgmtIp: initialTargetIp || activeDeviceData?.device?.mgmtIp
+      });
+      if (detectedSite) {
+        setSiteName(detectedSite);
+      }
       setSshError(null);
     }
-  }, [isOpen, initialMode, initialTargetIp, activeDeviceData]);
+  }, [isOpen, initialMode, initialTargetIp, initialTargetHostname, activeDeviceData]);
 
   useEffect(() => {
     if (serverEndpointHost) {
@@ -582,22 +594,27 @@ with urllib.request.urlopen(req, timeout=20) as resp:
                 })}
               </div>
 
-              {/* Campus Hierarchy Tagging */}
+              {/* Campus / Colocation Site Tagging */}
               <div className="pt-3 border-t border-slate-800 space-y-2 mt-3">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-sky-400">
-                  Campus / Globe Location Metadata
+                <div className="text-[10px] font-mono uppercase tracking-wider text-sky-400 flex items-center gap-1">
+                  <Globe className="w-3 h-3" /> Campus / Colocation Site
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block">Campus / Site Name</label>
-                  <input
-                    type="text"
+                  <label className="text-[10px] text-slate-400 block">Site Short Code (US / Canada)</label>
+                  <select
                     value={siteName}
                     onChange={(e) => setSiteName(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white"
-                  />
+                    className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs text-white font-mono"
+                  >
+                    {GLOBAL_SITES.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.flag} {s.code} — {s.name} ({s.role})
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-400 block">Building / IDF Closet</label>
+                  <label className="text-[10px] text-slate-400 block">Building / IDF / Cage</label>
                   <input
                     type="text"
                     value={buildingName}
@@ -743,7 +760,7 @@ with urllib.request.urlopen(req, timeout=20) as resp:
                   </span>
                 </div>
                 <p className="text-xs text-slate-300">
-                  Connects directly to your switch over SSH, sets <code className="text-sky-300">terminal length 0</code>, executes all 7 <code className="text-sky-300">show</code> commands automatically, correlates the 24-port or 48-port hardware layout, and saves to PostgreSQL.
+                  Connects directly to your switch over SSH, sets <code className="text-sky-300">terminal length 0</code>, executes all 7 <code className="text-sky-300">show</code> commands automatically, correlates the 24-port or 48-port hardware layout, and links Point-A ↔ Point-B switch topology in PostgreSQL.
                 </p>
 
                 {/* Quick-Pick Discovered Switches & CDP Neighbors */}
@@ -757,7 +774,10 @@ with urllib.request.urlopen(req, timeout=20) as resp:
                         <button
                           key={t.ip}
                           type="button"
-                          onClick={() => setSshHost(t.ip)}
+                          onClick={() => {
+                            setSshHost(t.ip);
+                            setSiteName(inferSiteCode({ hostname: t.label, mgmtIp: t.ip }));
+                          }}
                           className={`px-2.5 py-1 rounded-lg text-xs font-mono border transition flex items-center gap-1.5 cursor-pointer ${
                             sshHost === t.ip
                               ? 'bg-emerald-500/25 border-emerald-400 text-emerald-200 font-bold'
@@ -782,7 +802,7 @@ with urllib.request.urlopen(req, timeout=20) as resp:
                       required
                       value={sshHost}
                       onChange={(e) => setSshHost(e.target.value)}
-                      placeholder="e.g. 132.238.8.250"
+                      placeholder="e.g. 132.238.8.254"
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:border-emerald-400 focus:outline-none"
                     />
                   </div>
@@ -795,6 +815,38 @@ with urllib.request.urlopen(req, timeout=20) as resp:
                       value={sshPort}
                       onChange={(e) => setSshPort(e.target.value)}
                       className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-white focus:border-emerald-400 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Campus / Colocation Site Assignment for Polled Switch */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-mono text-slate-300 block mb-1">
+                      Campus / Colocation Site (US & Canada)
+                    </label>
+                    <select
+                      value={siteName}
+                      onChange={(e) => setSiteName(e.target.value)}
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-sky-300 focus:border-emerald-400 focus:outline-none"
+                    >
+                      {GLOBAL_SITES.map((s) => (
+                        <option key={s.code} value={s.code}>
+                          {s.flag} {s.code} — {s.name} ({s.role})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-mono text-slate-300 block mb-1">
+                      Building / MDF / Colocation Cage
+                    </label>
+                    <input
+                      type="text"
+                      value={buildingName}
+                      onChange={(e) => setBuildingName(e.target.value)}
+                      placeholder="e.g. Bancroft Hall MDF / Cage B4"
+                      className="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono text-white focus:border-emerald-400 focus:outline-none"
                     />
                   </div>
                 </div>
