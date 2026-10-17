@@ -374,42 +374,44 @@ function PowerSupplyModule3D({
   );
 }
 
-// Main 3D Switch Assembly
-function SwitchScene({
-  portsData,
-  selectedItem,
-  onSelect,
-  ledMode,
-  onCycleLedMode,
-  beaconActive,
-  onToggleBeacon,
+// Reusable Realistic 3D Cisco Catalyst 9300 Hardware Chassis Assembly
+// Used in both Single-Switch 3D View and Multi-Device 3D Network Topology View
+export function CiscoC9300ChassisAssembly({
+  portsData = [],
+  selectedItem = null,
+  onSelect = () => {},
+  ledMode = 'STAT',
+  onCycleLedMode = () => {},
+  beaconActive = false,
+  onToggleBeacon = () => {},
   switchModelId = 'C9300-24UX',
-  networkModuleId,
-  explodeFactor,
-  xrayMode,
-  showAirflow,
-  showLabels,
-  showPatchCables,
-  psuStates,
-  fanFaults,
-  psuModel,
-  cameraPreset,
-  chassisScale = 1.15,
-  backdropBrightness = 0.65,
-  showStudioGrid = true
+  networkModuleId = 'C9300-NM-8X',
+  explodeFactor = 0,
+  xrayMode = false,
+  showLabels = false,
+  showPatchCables = false,
+  psuStates = { psu1: 'ok', psu2: 'ok' },
+  fanFaults = { fan1: false, fan2: false, fan3: false },
+  psuModel = 'PWR-C1-1100WAC-P',
+  chassisScale = 1,
+  onHoverChange = () => {},
+  disablePartClick = false
 }) {
-  const controlsRef = useRef();
-  const [hoveredLabel, setHoveredLabel] = useState(null);
   const [hoveredPortNum, setHoveredPortNum] = useState(null);
-  const pulseRef = useRef(0);
-
-  useFrame((state) => {
-    pulseRef.current = Math.sin(state.clock.elapsedTime * 6);
-  });
 
   const is24PortChassis = portsData.length <= 24;
   const totalPortCount = is24PortChassis ? 24 : 48;
-  const portPrefixLabel = portsData[0]?.interfaceName?.replace(/\d+$/, '') || 'Gi1/0/';
+  const portPrefixLabel = portsData[0]?.interfaceName?.replace(/\d+$/, '') || 'Te1/0/';
+
+  const setHoveredLabel = (label) => {
+    if (onHoverChange) onHoverChange(label);
+  };
+
+  const handlePartSelect = (e, item) => {
+    if (disablePartClick) return;
+    e.stopPropagation();
+    if (onSelect) onSelect(item);
+  };
 
   // Compute LED color for each downlink port based on active Cisco Mode Button state
   const getPortLedColor = (port) => {
@@ -423,7 +425,13 @@ function SwitchScene({
         return '#334155';
       case 'SPEED':
         if (port.status === 'down') return '#334155';
-        if (spdStr.includes('10G') || spdStr.includes('5000') || spdStr.includes('10000') || spdStr.includes('2.5G') || spdStr.includes('5G')) {
+        if (
+          spdStr.includes('10G') ||
+          spdStr.includes('5000') ||
+          spdStr.includes('10000') ||
+          spdStr.includes('2.5G') ||
+          spdStr.includes('5G')
+        ) {
           return '#38bdf8';
         }
         if (spdStr.includes('1000') || spdStr.includes('1G')) return '#10b981';
@@ -470,83 +478,31 @@ function SwitchScene({
   }, [portsData, is24PortChassis]);
 
   const hasHardwareFault =
-    Object.values(fanFaults).some(Boolean) || psuStates.psu1 === 'fault' || psuStates.psu2 === 'fault';
+    Object.values(fanFaults).some(Boolean) ||
+    psuStates.psu1 === 'fault' ||
+    psuStates.psu2 === 'fault';
 
   const isSelectedComponent = (id) =>
     selectedItem?.type === 'component' && selectedItem?.id === id;
 
-  // Dynamic lighting multiplier based on backdrop brightness slider
-  const lightBoost = 0.85 + backdropBrightness * 0.85;
-
   return (
-    <>
-      <PerspectiveCamera makeDefault position={[8.8, 4.8, 11.2]} fov={34} />
-      <OrbitControls
-        ref={controlsRef}
-        enableDamping
-        dampingFactor={0.06}
-        minDistance={2.8}
-        maxDistance={28}
-        maxPolarAngle={Math.PI * 0.92}
-      />
-      <CameraRig cameraPreset={cameraPreset} controlsRef={controlsRef} />
-
-      {/* 360° Studio Multi-Point & Rim Lighting Setup (Illuminates Front Faceplate, Sides, Top & Rear) */}
-      <ambientLight intensity={1.25 * lightBoost} />
-      <hemisphereLight
-        skyColor="#f8fafc"
-        groundColor="#475569"
-        intensity={1.1 * lightBoost}
-      />
-      {/* Key Overhead & Front-Right Light */}
-      <directionalLight position={[12, 18, 16]} intensity={1.85 * lightBoost} castShadow />
-      {/* Dedicated Front Faceplate Fill Light (makes all 48 RJ-45 ports & Uplink bay pop clearly) */}
-      <directionalLight position={[0, 2.5, 18]} intensity={1.65 * lightBoost} color="#f1f5f9" />
-      {/* Dedicated Right & Left Chassis Profile Rim Lights */}
-      <directionalLight position={[18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
-      <directionalLight position={[-18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
-      {/* Dedicated Rear Bulkhead Fill Light */}
-      <directionalLight position={[0, 5, -18]} intensity={1.35 * lightBoost} color="#e2e8f0" />
-
-      {/* 3D Studio CAD Reference Floor Grid */}
-      {showStudioGrid && (
-        <Grid
-          position={[0, -2.05, 0]}
-          args={[38, 38]}
-          cellSize={1}
-          cellThickness={0.6}
-          cellColor={backdropBrightness > 0.7 ? '#64748b' : '#334155'}
-          sectionSize={5}
-          sectionThickness={1.1}
-          sectionColor={backdropBrightness > 0.7 ? '#3b82f6' : '#38bdf8'}
-          fadeDistance={30}
-          fadeStrength={1.2}
-          infiniteGrid
-        />
-      )}
-
-      {/* Thermal Airflow Streamlines */}
-      <AirflowParticles visible={showAirflow} fanFaults={fanFaults} />
-
-      <group name="Cisco_C9300_48_Assembly" scale={chassisScale}>
-        {/* =========================================================
-            1. CHASSIS BASE TRAY & SIDE VENTILATION WALLS
-            (Authentic Cisco Catalyst Powder-Coated Gunmetal/Silver-Gray)
-           ========================================================= */}
-        <group
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelect({ type: 'component', id: 'chassis-main' });
-          }}
-          onPointerOver={(e) => {
-            e.stopPropagation();
-            setHoveredLabel('1RU Galvanized Steel Chassis (17.5" × 1.73" × 17.5")');
-          }}
-          onPointerOut={() => setHoveredLabel(null)}
-        >
-          {/* Bottom Steel Pan */}
-          <mesh position={[0, -0.82, 0]} receiveShadow>
-            <boxGeometry args={[17.5, 0.1, 12.0]} />
+    <group name="Cisco_C9300_48_Assembly" scale={chassisScale}>
+      {/* =========================================================
+          1. CHASSIS BASE TRAY & SIDE VENTILATION WALLS
+          (Authentic Cisco Catalyst Powder-Coated Gunmetal/Silver-Gray)
+         ========================================================= */}
+      <group
+        onClick={(e) => handlePartSelect(e, { type: 'component', id: 'chassis-main' })}
+        onPointerOver={(e) => {
+          if (disablePartClick) return;
+          e.stopPropagation();
+          setHoveredLabel('1RU Galvanized Steel Chassis (17.5" × 1.73" × 17.5")');
+        }}
+        onPointerOut={() => setHoveredLabel(null)}
+      >
+        {/* Bottom Steel Pan */}
+        <mesh position={[0, -0.82, 0]} receiveShadow>
+          <boxGeometry args={[17.5, 0.1, 12.0]} />
             <meshStandardMaterial
               color={isSelectedComponent('chassis-main') ? '#3b82f6' : '#3b495e'}
               metalness={0.48}
@@ -1376,7 +1332,102 @@ function SwitchScene({
             </Html>
           )}
         </group>
-      </group>
+    </group>
+  );
+}
+
+// Main Single-Chassis 3D Scene Wrapper
+function SwitchScene({
+  portsData,
+  selectedItem,
+  onSelect,
+  ledMode,
+  onCycleLedMode,
+  beaconActive,
+  onToggleBeacon,
+  switchModelId = 'C9300-24UX',
+  networkModuleId,
+  explodeFactor,
+  xrayMode,
+  showAirflow,
+  showLabels,
+  showPatchCables,
+  psuStates,
+  fanFaults,
+  psuModel,
+  cameraPreset,
+  chassisScale = 1.15,
+  backdropBrightness = 0.65,
+  showStudioGrid = true
+}) {
+  const controlsRef = useRef();
+  const [hoveredLabel, setHoveredLabel] = useState(null);
+  const lightBoost = 0.85 + backdropBrightness * 0.85;
+
+  return (
+    <>
+      <PerspectiveCamera makeDefault position={[8.8, 4.8, 11.2]} fov={34} />
+      <OrbitControls
+        ref={controlsRef}
+        enableDamping
+        dampingFactor={0.06}
+        minDistance={2.8}
+        maxDistance={28}
+        maxPolarAngle={Math.PI * 0.92}
+      />
+      <CameraRig cameraPreset={cameraPreset} controlsRef={controlsRef} />
+
+      {/* 360° Studio Multi-Point & Rim Lighting Setup (Illuminates Front Faceplate, Sides, Top & Rear) */}
+      <ambientLight intensity={1.25 * lightBoost} />
+      <hemisphereLight
+        skyColor="#f8fafc"
+        groundColor="#475569"
+        intensity={1.1 * lightBoost}
+      />
+      <directionalLight position={[12, 18, 16]} intensity={1.85 * lightBoost} castShadow />
+      <directionalLight position={[0, 2.5, 18]} intensity={1.65 * lightBoost} color="#f1f5f9" />
+      <directionalLight position={[18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
+      <directionalLight position={[-18, 4, 4]} intensity={1.25 * lightBoost} color="#e2e8f0" />
+      <directionalLight position={[0, 5, -18]} intensity={1.35 * lightBoost} color="#e2e8f0" />
+
+      {showStudioGrid && (
+        <Grid
+          position={[0, -2.05, 0]}
+          args={[38, 38]}
+          cellSize={1}
+          cellThickness={0.6}
+          cellColor={backdropBrightness > 0.7 ? '#64748b' : '#334155'}
+          sectionSize={5}
+          sectionThickness={1.1}
+          sectionColor={backdropBrightness > 0.7 ? '#3b82f6' : '#38bdf8'}
+          fadeDistance={30}
+          fadeStrength={1.2}
+          infiniteGrid
+        />
+      )}
+
+      <AirflowParticles visible={showAirflow} fanFaults={fanFaults} />
+
+      <CiscoC9300ChassisAssembly
+        portsData={portsData}
+        selectedItem={selectedItem}
+        onSelect={onSelect}
+        ledMode={ledMode}
+        onCycleLedMode={onCycleLedMode}
+        beaconActive={beaconActive}
+        onToggleBeacon={onToggleBeacon}
+        switchModelId={switchModelId}
+        networkModuleId={networkModuleId}
+        explodeFactor={explodeFactor}
+        xrayMode={xrayMode}
+        showLabels={showLabels}
+        showPatchCables={showPatchCables}
+        psuStates={psuStates}
+        fanFaults={fanFaults}
+        psuModel={psuModel}
+        chassisScale={chassisScale}
+        onHoverChange={setHoveredLabel}
+      />
 
       <ContactShadows position={[0, -2.02, 0]} opacity={0.5} scale={32} blur={2.4} far={6} />
 

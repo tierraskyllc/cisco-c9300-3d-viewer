@@ -39,10 +39,113 @@ import {
   ISP_PROVIDERS,
   buildGlobalAndSiteTopology
 } from '../data/globalNetworkData';
+import { CiscoC9300ChassisAssembly } from './CiscoChassis3D';
 
 const LAYOUT_3D_STORAGE_KEY = 'fdu_multi_device_3d_layout_v1';
 const API_3D_LAYOUT_ENDPOINT = '/api/topology/layouts/multi_device_3d_v1';
 const FLOOR_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.2);
+const MULTI_CHASSIS_SCALE = 0.225;
+const MULTI_CHASSIS_Y = 0.56;
+
+// Compute the exact 3D world coordinate of a specific RJ-45 downlink port (1..24 or 1..48) on a C9300 switch in the Multi-Device 3D scene
+function getC9300PortWorldPos(swPos, portNum = 1, is24Port = true, scale = MULTI_CHASSIS_SCALE) {
+  const idx = Math.max(0, (portNum || 1) - 1);
+  const col = Math.floor(idx / 2);
+  const bankIdx = Math.floor(col / 6);
+  const isTopRow = idx % 2 === 0;
+  const startX = is24Port ? -0.85 : -5.65;
+  const localX = startX + col * 0.36 + bankIdx * 0.24;
+  const localY = isTopRow ? 0.24 : -0.24;
+  const localZ = 6.08;
+  return [
+    +(swPos[0] + localX * scale).toFixed(3),
+    +(swPos[1] + MULTI_CHASSIS_Y + localY * scale).toFixed(3),
+    +(swPos[2] + localZ * scale).toFixed(3)
+  ];
+}
+
+// Compute the exact 3D world coordinate of an SFP28 uplink cage (0..7) in the right-hand C9300-NM-8X bay
+function getC9300UplinkWorldPos(swPos, uplinkIdx = 0, scale = MULTI_CHASSIS_SCALE) {
+  const col = Math.floor(uplinkIdx / 2);
+  const isTop = uplinkIdx % 2 === 0;
+  const localX = 6.25 + (-1.28 + col * 0.85);
+  const localY = isTop ? 0.25 : -0.25;
+  const localZ = 6.12;
+  return [
+    +(swPos[0] + localX * scale).toFixed(3),
+    +(swPos[1] + MULTI_CHASSIS_Y + localY * scale).toFixed(3),
+    +(swPos[2] + localZ * scale).toFixed(3)
+  ];
+}
+
+// Extract or synthesize the 24/48-port status array for any C9300 switch in the Multi-Device 3D scene
+function buildSwitchPortsFor3DNode(node, savedDevices = [], parsedSwitchData = null) {
+  const totalPorts = node?.model?.includes('48') ? 48 : 24;
+
+  // 1. Check if this node is the currently active parsed switch
+  if (
+    parsedSwitchData?.ports48?.length &&
+    (parsedSwitchData?.device?.hostname === node?.hostname ||
+      (node?.serialNumber && parsedSwitchData?.device?.serialNumber === node?.serialNumber))
+  ) {
+    return parsedSwitchData.ports48.slice(0, totalPorts);
+  }
+
+  // 2. Check if this node has a full parsed snapshot in PostgreSQL savedDevices
+  const found = (savedDevices || []).find(
+    (d) =>
+      (node?.serialNumber && d.serial_number === node.serialNumber) ||
+      d.hostname === node?.hostname
+  );
+  if (found?.parsed_snapshot?.ports48?.length) {
+    return found.parsed_snapshot.ports48.slice(0, totalPorts);
+  }
+
+  // 3. Fallback: build a realistic port array from discovered links & attached APs
+  const upPortMap = {};
+  for (const ep of node?.attachedEndpoints || []) {
+    const m = String(ep.localPort || '').match(/(\d+)$/);
+    if (m) {
+      upPortMap[Number(m[1])] = {
+        status: 'up',
+        endpointType: 'ap',
+        poeWatts: ep.poeWatts || 30.0,
+        speed: '2.5G',
+        duplex: 'full',
+        connectedDevice: ep.hostname
+      };
+    }
+  }
+  for (const lnk of node?.switchLinks || []) {
+    if (String(lnk.localPort || '').startsWith('Tw')) continue; // Uplink module port
+    const m = String(lnk.localPort || '').match(/(\d+)$/);
+    if (m) {
+      upPortMap[Number(m[1])] = {
+        status: 'up',
+        endpointType: 'switch',
+        poeWatts: 0,
+        speed: '10G',
+        duplex: 'full',
+        connectedDevice: lnk.remoteHostname
+      };
+    }
+  }
+
+  return Array.from({ length: totalPorts }, (_, i) => {
+    const portNumber = i + 1;
+    const hit = upPortMap[portNumber];
+    return {
+      portNumber,
+      interfaceName: `Te1/0/${portNumber}`,
+      status: hit ? hit.status : 'down',
+      endpointType: hit ? hit.endpointType : 'none',
+      poeWatts: hit ? hit.poeWatts : 0,
+      speed: hit ? hit.speed : 'auto',
+      duplex: hit ? hit.duplex : 'auto',
+      connectedDevice: hit ? hit.connectedDevice : 'Not Connected'
+    };
+  });
+}
 
 /**
  * Default 3D coordinates for the 4 Square Zone Bases and relative (dx, dz) offsets for every 3D device.
@@ -555,11 +658,13 @@ function CoreChassis9606R3D({
 }
 
 /**
- * 3D Cisco Catalyst C9300 Switch Chassis inside the Multi-Device Topology Scene (Draggable within/near its Square Base)
+ * Realistic 3D Cisco Catalyst C9300 Switch Chassis inside the Multi-Device Topology Scene
+ * Uses the exact same 3D hardware assembly as the Single-Chassis 3D view!
  */
 function SwitchC9300Node3D({
   deviceId,
   node,
+  portsData = [],
   position,
   isSelected,
   isDragging,
@@ -567,7 +672,10 @@ function SwitchC9300Node3D({
   onSelect,
   onStartDeviceDrag,
   onOpenHwDrawer,
-  labelMode
+  labelMode,
+  xrayMode = false,
+  explodeFactor = 0,
+  showPatchCables = true
 }) {
   const [hovered, setHovered] = useState(false);
   const accentColor = node.role === 'MDF / Distribution' ? '#38bdf8' : '#10b981';
@@ -604,102 +712,43 @@ function SwitchC9300Node3D({
       {/* Selection / Active / Drag Halo on Floor */}
       {(isSelected || hovered || isActiveChassis || isDragging) && (
         <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.1, 2.42, 32]} />
+          <ringGeometry args={[2.35, 2.65, 36]} />
           <meshBasicMaterial color={isDragging || isSelected ? '#ffffff' : accentColor} />
         </mesh>
       )}
 
-      {/* 1RU Elevated Pedestal Base */}
-      <mesh position={[0, 0.25, 0]}>
-        <boxGeometry args={[3.4, 0.5, 2.1]} />
-        <meshStandardMaterial color="#091326" metalness={0.4} roughness={0.6} />
+      {/* Sleek Rack Pedestal Under the Real 3D C9300 Chassis */}
+      <mesh position={[0, 0.16, 0]}>
+        <boxGeometry args={[3.75, 0.32, 2.55]} />
+        <meshStandardMaterial color="#091326" metalness={0.45} roughness={0.55} />
       </mesh>
 
-      {/* Authentic 1RU Cisco Catalyst 9300 Sheet-Metal Enclosure */}
-      <RoundedBox args={[3.8, 0.68, 2.4]} radius={0.08} smoothness={3} position={[0, 0.84, 0]} castShadow>
-        <meshStandardMaterial
-          color={isDragging ? '#0284c7' : isSelected ? '#2563eb' : hovered ? '#334155' : '#1e293b'}
-          metalness={0.62}
-          roughness={0.3}
+      {/* Authentic High-Detail 3D Cisco Catalyst 9300 Chassis Assembly (Exact Model from Single 3D Chassis View) */}
+      <group position={[0, MULTI_CHASSIS_Y, 0]}>
+        <CiscoC9300ChassisAssembly
+          portsData={portsData}
+          selectedItem={
+            isSelected || isDragging ? { type: 'component', id: 'chassis-main' } : null
+          }
+          ledMode="STAT"
+          beaconActive={isSelected || hovered || isActiveChassis}
+          switchModelId={node.model || 'C9300-24UX'}
+          networkModuleId="C9300-NM-8X"
+          explodeFactor={explodeFactor}
+          xrayMode={xrayMode}
+          showLabels={false}
+          showPatchCables={showPatchCables}
+          psuStates={{ psu1: 'ok', psu2: 'ok' }}
+          fanFaults={{ fan1: false, fan2: false, fan3: false }}
+          psuModel="PWR-C1-1100WAC-P"
+          chassisScale={MULTI_CHASSIS_SCALE}
+          disablePartClick={true}
         />
-      </RoundedBox>
-
-      {/* Top 4-Way Switching Arrows Emblem */}
-      <mesh position={[0, 1.19, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[2.6, 1.3]} />
-        <meshBasicMaterial color="#0f172a" transparent opacity={0.65} />
-      </mesh>
-      <mesh position={[0, 1.2, 0]}>
-        <boxGeometry args={[1.8, 0.02, 0.14]} />
-        <meshBasicMaterial color={accentColor} />
-      </mesh>
-      <mesh position={[0, 1.2, 0]}>
-        <boxGeometry args={[0.14, 0.02, 1.0]} />
-        <meshBasicMaterial color={accentColor} />
-      </mesh>
-
-      {/* Front Faceplate Bezel */}
-      <mesh position={[0, 0.84, 1.21]}>
-        <boxGeometry args={[3.68, 0.56, 0.03]} />
-        <meshStandardMaterial color="#0b1324" roughness={0.5} />
-      </mesh>
-
-      {/* Left Blue UID Beacon LED */}
-      <mesh position={[-1.65, 0.92, 1.24]}>
-        <sphereGeometry args={[0.06, 12, 12]} />
-        <meshBasicMaterial color="#38bdf8" />
-      </mesh>
-
-      {/* 24-Port Odd-Over-Even RJ45 Matrix with Live Port LEDs */}
-      {Array.from({ length: 12 }, (_, colIdx) => {
-        const x = -1.25 + colIdx * 0.17;
-        const oddPortNum = colIdx * 2 + 1;
-        const evenPortNum = oddPortNum + 1;
-        const isOddUp = node.hostname?.includes('WL') ? [1, 5].includes(oddPortNum) : false;
-        const isEvenUp = node.hostname?.includes('WL')
-          ? [2, 4, 6, 8, 14, 20].includes(evenPortNum)
-          : evenPortNum === 24;
-
-        return (
-          <group key={colIdx}>
-            <mesh position={[x, 0.94, 1.23]}>
-              <boxGeometry args={[0.12, 0.13, 0.03]} />
-              <meshBasicMaterial color={isOddUp ? '#10b981' : '#1e293b'} />
-            </mesh>
-            <mesh position={[x, 0.74, 1.23]}>
-              <boxGeometry args={[0.12, 0.13, 0.03]} />
-              <meshBasicMaterial
-                color={
-                  evenPortNum === 20 || evenPortNum === 24
-                    ? '#34d399'
-                    : isEvenUp
-                    ? '#10b981'
-                    : '#1e293b'
-                }
-              />
-            </mesh>
-          </group>
-        );
-      })}
-
-      {/* Right C9300-NM-8X Modular Uplink Bay */}
-      <mesh position={[1.25, 0.84, 1.23]}>
-        <boxGeometry args={[0.85, 0.36, 0.03]} />
-        <meshBasicMaterial color="#090d16" />
-      </mesh>
-      {[0, 1, 2, 3].map((uIdx) => {
-        const isSfpActive = node.hostname?.includes('WL') && (uIdx === 0 || uIdx === 1);
-        return (
-          <mesh key={uIdx} position={[0.96 + uIdx * 0.19, 0.84, 1.25]}>
-            <boxGeometry args={[0.13, 0.16, 0.03]} />
-            <meshBasicMaterial color={isSfpActive ? '#f97316' : '#334155'} />
-          </mesh>
-        );
-      })}
+      </group>
 
       {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time + Direct [HW] Drawer Button) */}
       {visible && (
-        <Html position={[0, 1.75, 0]} center zIndexRange={[25, 0]}>
+        <Html position={[0, 1.35 + explodeFactor * 0.9, 0]} center zIndexRange={[25, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -952,6 +1001,8 @@ export default function MultiDevice3DTopologyScene({
   const [labelMode, setLabelMode] = useState('hover');
   const [showLinkBadges, setShowLinkBadges] = useState(false);
   const [showZoneTitles, setShowZoneTitles] = useState(false);
+  const [multiXrayMode, setMultiXrayMode] = useState(false);
+  const [multiExplode, setMultiExplode] = useState(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState('interconnects'); // 'interconnects' | 'hardware' | 'clusters'
   const [searchFilter, setSearchFilter] = useState('');
@@ -1303,11 +1354,11 @@ export default function MultiDevice3DTopologyScene({
     };
   }, [attachedAps, layout3D]);
 
-  // Build 3D Conduits Connecting Exact Live Device Positions
+  // Build 3D Conduits Connecting Exact Live Front-Panel Port Coordinates on the Realistic 3D Switches
   const conduits3D = useMemo(() => {
     const list = [];
 
-    // 1. Dual 25G Fiber Uplinks: T-BAN-2FL-WL (Tw1/1/1 & Tw1/1/2) <-> tcore-9600 (Tw2/2/0/35 & Tw1/2/0/35)
+    // 1. Dual 25G Fiber Uplinks: T-BAN-2FL-WL (Tw1/1/1 & Tw1/1/2 in C9300-NM-8X bay) <-> tcore-9600 (Tw2/2/0/35 & Tw1/2/0/35)
     list.push({
       id: 'fiber-uplink-1',
       isPrimaryTrunk: true,
@@ -1323,7 +1374,7 @@ export default function MultiDevice3DTopologyScene({
       speed: '25G SFP28 Fiber',
       nativeVlan: '1',
       allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: [positions.wlPos[0] + 1.0, 1.05, positions.wlPos[2] - 0.8],
+      startPos: getC9300UplinkWorldPos(positions.wlPos, 0),
       endPos: [positions.corePos[0] + 0.5, 1.5, positions.corePos[2] + 1.2]
     });
 
@@ -1342,7 +1393,7 @@ export default function MultiDevice3DTopologyScene({
       speed: '25G SFP28 Fiber',
       nativeVlan: '1',
       allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: [positions.wlPos[0] + 1.3, 1.05, positions.wlPos[2] - 0.8],
+      startPos: getC9300UplinkWorldPos(positions.wlPos, 1),
       endPos: [positions.corePos[0] + 0.9, 1.2, positions.corePos[2] + 1.2]
     });
 
@@ -1362,12 +1413,14 @@ export default function MultiDevice3DTopologyScene({
       speed: '10G mGig Trunk (1000Mbps)',
       nativeVlan: '133',
       allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: [positions.wlPos[0] - 0.4, 0.85, positions.wlPos[2] + 1.2],
-      endPos: [positions.wsPos[0] + 0.6, 0.85, positions.wsPos[2] + 1.2]
+      startPos: getC9300PortWorldPos(positions.wlPos, 20, true),
+      endPos: getC9300PortWorldPos(positions.wsPos, 24, true)
     });
 
-    // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL
+    // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL exact front-panel RJ-45 ports
     positions.apPositions.forEach(({ ap, pos }, idx) => {
+      const m = String(ap.localPort || '').match(/\/(\d+)$/);
+      const portNum = m ? parseInt(m[1], 10) : idx + 1;
       list.push({
         id: `ap-link-${ap.localPort}`,
         isPrimaryTrunk: false,
@@ -1383,7 +1436,7 @@ export default function MultiDevice3DTopologyScene({
         speed: 'mGig UPOE (802.3bt)',
         nativeVlan: '25',
         allowedVlans: 'Access / Capwap',
-        startPos: [positions.wlPos[0] + 1.6, 0.8, positions.wlPos[2] + (idx - 3) * 0.18],
+        startPos: getC9300PortWorldPos(positions.wlPos, portNum, true),
         endPos: [pos[0], 0.3, pos[2]]
       });
     });
@@ -1563,6 +1616,33 @@ export default function MultiDevice3DTopologyScene({
             Zones: {showZoneTitles ? 'On' : 'Off'}
           </button>
 
+          {/* 3D Hardware Chassis X-Ray & Explode Controls for All Switches in Scene */}
+          <button
+            type="button"
+            onClick={() => setMultiXrayMode(!multiXrayMode)}
+            className={`px-2 py-1 rounded-md text-[10px] font-mono border cursor-pointer transition ${
+              multiXrayMode
+                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40 font-bold'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle PCB X-Ray mode across all realistic 3D C9300 switches in the scene"
+          >
+            PCB X-Ray: {multiXrayMode ? 'On' : 'Off'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setMultiExplode((prev) => (prev === 0 ? 0.65 : 0))}
+            className={`px-2 py-1 rounded-md text-[10px] font-mono border cursor-pointer transition ${
+              multiExplode > 0
+                ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 font-bold'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Explode top lid on all realistic 3D C9300 switches to inspect internal UADP ASIC, heatpipes & fans"
+          >
+            Explode Lid: {multiExplode > 0 ? 'Open' : 'Closed'}
+          </button>
+
           {onSwitchToSingleChassis3D && (
             <button
               type="button"
@@ -1614,21 +1694,24 @@ export default function MultiDevice3DTopologyScene({
               enableDamping
               dampingFactor={0.07}
               maxPolarAngle={Math.PI / 2 - 0.03}
-              minDistance={5}
+              minDistance={4}
               maxDistance={55}
             />
 
-            {/* Studio Architectural Lighting */}
-            <ambientLight intensity={0.95} />
+            {/* Studio Architectural & Hardware Faceplate Lighting */}
+            <ambientLight intensity={1.1} />
+            <hemisphereLight args={['#e2e8f0', '#0f172a', 0.9]} />
             <directionalLight
               position={[16, 28, 18]}
-              intensity={1.6}
+              intensity={1.7}
               castShadow
               shadow-mapSize={[2048, 2048]}
             />
+            {/* Front faceplate key light so metallic RJ-45 cages, port numbers, and C9300-NM-8X pop cleanly */}
+            <directionalLight position={[0, 10, 26]} intensity={1.35} color="#f8fafc" />
             <directionalLight position={[-18, 18, -14]} intensity={0.85} color="#38bdf8" />
-            <pointLight position={[-6, 6, 2]} intensity={1.1} color="#10b981" distance={22} />
-            <pointLight position={[6, 6, -2]} intensity={0.9} color="#38bdf8" distance={22} />
+            <pointLight position={[-6, 6, 4]} intensity={1.2} color="#10b981" distance={24} />
+            <pointLight position={[6, 6, -2]} intensity={0.95} color="#38bdf8" distance={24} />
 
             {/* Invisible Full-Floor Raycast Plane Active During 3D Base/Device Drag */}
             {active3DDrag && (
@@ -1714,6 +1797,7 @@ export default function MultiDevice3DTopologyScene({
                 deviceId="wlNode"
                 node={wlNode}
                 position={positions.wlPos}
+                portsData={buildSwitchPortsFor3DNode(wlNode, savedDevices, parsedSwitchData)}
                 isSelected={activeEntity?.id === wlNode.id}
                 isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
                 isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
@@ -1721,6 +1805,8 @@ export default function MultiDevice3DTopologyScene({
                 onStartDeviceDrag={handleStartDeviceDrag3D}
                 onOpenHwDrawer={onOpenHwDrawer}
                 labelMode={labelMode}
+                xrayMode={multiXrayMode}
+                explodeFactor={multiExplode}
               />
             )}
 
@@ -1729,6 +1815,7 @@ export default function MultiDevice3DTopologyScene({
                 deviceId="wsNode"
                 node={workStudyNode}
                 position={positions.wsPos}
+                portsData={buildSwitchPortsFor3DNode(workStudyNode, savedDevices, parsedSwitchData)}
                 isSelected={activeEntity?.id === workStudyNode.id}
                 isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
                 isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
@@ -1736,6 +1823,8 @@ export default function MultiDevice3DTopologyScene({
                 onStartDeviceDrag={handleStartDeviceDrag3D}
                 onOpenHwDrawer={onOpenHwDrawer}
                 labelMode={labelMode}
+                xrayMode={multiXrayMode}
+                explodeFactor={multiExplode}
               />
             )}
 
@@ -1749,11 +1838,14 @@ export default function MultiDevice3DTopologyScene({
                   key={sw.id}
                   node={sw}
                   position={pos}
+                  portsData={buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)}
                   isSelected={activeEntity?.id === sw.id}
                   isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
                   onSelect={handleSelectEntity}
                   onOpenHwDrawer={onOpenHwDrawer}
                   labelMode={labelMode}
+                  xrayMode={multiXrayMode}
+                  explodeFactor={multiExplode}
                 />
               );
             })}
