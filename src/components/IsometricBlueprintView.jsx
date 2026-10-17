@@ -102,7 +102,8 @@ export default function IsometricBlueprintView({
   globalGraph,
   activeDeviceSerial,
   onSelectSavedDevice,
-  onPollNeighbor
+  onPollNeighbor,
+  onOpenHwDrawer
 }) {
   const svgRef = useRef(null);
   const [zoom, setZoom] = useState(1);
@@ -707,7 +708,7 @@ export default function IsometricBlueprintView({
             strokeWidth="1.8"
           />
           <text
-            x="0"
+            x="-12"
             y="-12"
             textAnchor="middle"
             fill="#ffffff"
@@ -717,6 +718,42 @@ export default function IsometricBlueprintView({
           >
             {title}
           </text>
+          {/* Direct [HW] Drawer Button on Switch Callout Tag */}
+          {onOpenHwDrawer && (
+            <g
+              transform="translate(76, -18)"
+              onPointerDown={(e) => {
+                e.stopPropagation();
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenHwDrawer(serial !== 'UNPOLLED' ? serial : null);
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              <rect
+                x="-21"
+                y="-8"
+                width="42"
+                height="16"
+                rx="4"
+                fill="#0284c7"
+                stroke="#38bdf8"
+                strokeWidth="1.2"
+              />
+              <text
+                x="0"
+                y="3"
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="8.5"
+                fontWeight="900"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              >
+                🗄 HW
+              </text>
+            </g>
+          )}
           <text
             x="0"
             y="2"
@@ -880,7 +917,7 @@ export default function IsometricBlueprintView({
             strokeWidth="1.8"
           />
           <text
-            x="0"
+            x="-12"
             y="-6"
             textAnchor="middle"
             fill="#ffffff"
@@ -890,6 +927,39 @@ export default function IsometricBlueprintView({
           >
             {hostname}
           </text>
+          {onOpenHwDrawer && (
+            <g
+              transform="translate(72, -10)"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenHwDrawer(null);
+              }}
+              style={{ cursor: 'pointer' }}
+            >
+              <rect
+                x="-19"
+                y="-8"
+                width="38"
+                height="15"
+                rx="4"
+                fill="#ea580c"
+                stroke="#fdba74"
+                strokeWidth="1.2"
+              />
+              <text
+                x="0"
+                y="2.5"
+                textAnchor="middle"
+                fill="#ffffff"
+                fontSize="8.5"
+                fontWeight="900"
+                fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+              >
+                🗄 HW
+              </text>
+            </g>
+          )}
           <text
             x="0"
             y="8"

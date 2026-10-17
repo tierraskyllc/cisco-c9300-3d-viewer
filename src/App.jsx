@@ -4,6 +4,7 @@ import MultiDevice3DTopologyScene from './components/MultiDevice3DTopologyScene'
 import TopologyViewer from './components/TopologyViewer';
 import ControlPanel from './components/ControlPanel';
 import ShowCommandUploader from './components/ShowCommandUploader';
+import LeftNavInventoryDrawer from './components/LeftNavInventoryDrawer';
 import {
   SWITCH_MODELS,
   LED_MODES,
@@ -14,20 +15,14 @@ import {
   SAMPLE_CAMPUS_SHOW_OUTPUTS
 } from './utils/ciscoCliParser';
 import {
-  Box,
-  Network,
-  Columns,
   Wind,
   Eye,
   Tag,
   Cable,
   Sparkles,
-  Upload,
-  Database,
   Sun,
   Maximize2,
   Grid3X3,
-  Wifi,
   PanelRightClose,
   PanelRightOpen
 } from 'lucide-react';
@@ -45,11 +40,13 @@ export default function App() {
   const [uploaderTargetIp, setUploaderTargetIp] = useState('');
   const [uploaderTargetHostname, setUploaderTargetHostname] = useState('');
 
-  // Core Switch Configuration State
+  // Core Switch Configuration & Navigation Drawer State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
   const [networkModuleId, setNetworkModuleId] = useState('C9300-NM-8X');
   const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | '3d' | 'split' | 'topology'
+  const [isLeftNavOpen, setIsLeftNavOpen] = useState(true);
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false);
+  const [selectedInventoryEntity, setSelectedInventoryEntity] = useState(null);
   const [cameraPreset, setCameraPreset] = useState('isometric');
 
   // 3D Inspection, Backdrop Brightness, Scale & Disassembly Controls
@@ -206,11 +203,27 @@ export default function App() {
     }
   };
 
+  const handleOpenHwDrawerForDevice = (serialNumber) => {
+    if (serialNumber && serialNumber !== 'UNPOLLED') {
+      handleSelectSavedDevice(serialNumber);
+    }
+    setIsRightInspectorOpen(true);
+  };
+
   const handleOpenLivePoll = (targetIp = '', targetHostname = '') => {
     setUploaderMode('ssh');
     setUploaderTargetIp(targetIp || parsedSwitchData.device.mgmtIp || '');
     setUploaderTargetHostname(targetHostname || parsedSwitchData.device.hostname || '');
     setIsUploaderOpen(true);
+  };
+
+  const handleViewModeChange = (nextMode) => {
+    setViewMode(nextMode);
+    if (nextMode === '3d') {
+      setIsRightInspectorOpen(true);
+    } else if (nextMode === 'multi-3d' || nextMode === 'topology') {
+      setIsRightInspectorOpen(false);
+    }
   };
 
   // Active Selection (either { type: 'component', id: 'chassis-main' } or { type: 'port', portNumber: 1 })
@@ -254,160 +267,38 @@ export default function App() {
   }, [switchModel, psuStates]);
 
   return (
-    <div className="flex flex-col w-screen h-screen bg-[#060911] text-slate-100 select-none overflow-hidden">
+    <div className="flex w-screen h-screen bg-[#060911] text-slate-100 select-none overflow-hidden">
       {/* =========================================================
-          TOP GLOBAL NAVIGATION, SQL DEVICE SELECTOR & CLI UPLOADER
+          LEFT-HAND COLLAPSIBLE NAVIGATION, VIEW SWITCHER & INVENTORY DRAWER
+          (Replaces the top header row to reclaim 100% vertical real estate)
          ========================================================= */}
-      <header className="flex flex-wrap items-center justify-between gap-3 px-5 py-2.5 bg-slate-950/90 border-b border-slate-800/90 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-blue-700 flex items-center justify-center shadow-lg shadow-sky-500/20 font-mono font-black text-white text-sm">
-            C93
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-base font-bold tracking-tight text-white">
-                {parsedSwitchData.device.hostname} — {activePortCount}-Port ({switchModelId}) 3D & Topology Explorer
-              </h1>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                {activePortCount}-Port Switch
-              </span>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                <Database className="w-2.5 h-2.5" /> S/N: {parsedSwitchData.device.serialNumber}
-              </span>
-            </div>
-            <p className="text-xs text-slate-400">
-              IOS-XE {parsedSwitchData.device.iosVersion} • Mgmt: {parsedSwitchData.device.mgmtIp} • {switchModel.downlinkDesc}
-            </p>
-          </div>
-        </div>
-
-        {/* Center/Right Controls: Live SSH Poll + Upload Show Commands + SQL Device Switcher + SKU + View Mode */}
-        <div className="flex flex-wrap items-center gap-2">
-          {/* 1-Click Live SSH Poll Button */}
-          <button
-            onClick={() => handleOpenLivePoll(parsedSwitchData.device.mgmtIp, parsedSwitchData.device.hostname)}
-            className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 cursor-pointer transition"
-            title="Connect directly to the switch via SSH or configure Switch Self-Push"
-          >
-            <Wifi className="w-3.5 h-3.5" />
-            Live Poll Switch (SSH)
-          </button>
-
-          {/* Manual Upload / Parse 7 Cisco Show Commands */}
-          <button
-            onClick={() => {
-              setUploaderMode('manual');
-              setIsUploaderOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-sky-500/40 text-xs font-bold text-sky-200 flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <Upload className="w-3.5 h-3.5 text-sky-400" />
-            Upload Show Commands
-          </button>
-
-          {/* SQL Database Stored Switches Selector */}
-          {savedDevices.length > 0 && (
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-              <Database className="w-3.5 h-3.5 text-emerald-400" />
-              <select
-                value={parsedSwitchData.device.serialNumber}
-                onChange={(e) => handleSelectSavedDevice(e.target.value)}
-                className="bg-transparent text-xs font-mono font-semibold text-emerald-300 focus:outline-none cursor-pointer"
-              >
-                {savedDevices.map((d) => (
-                  <option
-                    key={d.serial_number}
-                    value={d.serial_number}
-                    className="bg-slate-950 text-slate-100"
-                  >
-                    {d.hostname} ({d.model || 'C9300'} • {d.serial_number})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          {/* Switch SKU Selector (Supports both 24-Port and 48-Port C9300 Models) */}
-          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[11px] font-mono text-slate-400">Model:</span>
-            <select
-              value={switchModelId}
-              onChange={(e) => handleModelChange(e.target.value)}
-              className="bg-transparent text-xs font-mono font-bold text-sky-300 focus:outline-none cursor-pointer"
-            >
-              {Object.values(SWITCH_MODELS).map((m) => (
-                <option key={m.id} value={m.id} className="bg-slate-950 text-slate-100">
-                  {m.id} ({m.portCount}-Port • {m.poeStandard})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Primary Layout Mode Switcher: Multi-Device 3D | Single 3D Chassis | Split View | 2D Topology */}
-          <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
-            {[
-              { id: 'multi-3d', label: 'Multi-Device 3D', icon: Sparkles },
-              { id: '3d', label: 'Single 3D Chassis', icon: Box },
-              { id: 'split', label: 'Split View', icon: Columns },
-              { id: 'topology', label: '2D Blueprint & Tables', icon: Network }
-            ].map((mode) => {
-              const Icon = mode.icon;
-              return (
-                <button
-                  key={mode.id}
-                  onClick={() => {
-                    setViewMode(mode.id);
-                    if (mode.id === '3d') {
-                      setIsRightInspectorOpen(true);
-                    } else if (mode.id === 'multi-3d' || mode.id === 'topology') {
-                      setIsRightInspectorOpen(false);
-                    }
-                  }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                    viewMode === mode.id
-                      ? mode.id === 'multi-3d'
-                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow'
-                        : 'bg-sky-600 text-white shadow'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  {mode.label}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Collapsible Right Hardware Drawer Toggle Button */}
-          <button
-            type="button"
-            onClick={() => setIsRightInspectorOpen(!isRightInspectorOpen)}
-            className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
-              isRightInspectorOpen
-                ? 'bg-sky-500/20 text-sky-200 border-sky-400/50'
-                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
-            }`}
-            title="Toggle Right Hardware & Port CLI Inspector Drawer"
-          >
-            {isRightInspectorOpen ? (
-              <>
-                <PanelRightClose className="w-3.5 h-3.5" /> Hide HW Drawer
-              </>
-            ) : (
-              <>
-                <PanelRightOpen className="w-3.5 h-3.5" /> HW Drawer
-              </>
-            )}
-          </button>
-        </div>
-      </header>
+      <LeftNavInventoryDrawer
+        isOpen={isLeftNavOpen}
+        onToggle={() => setIsLeftNavOpen(!isLeftNavOpen)}
+        viewMode={viewMode}
+        onSelectViewMode={handleViewModeChange}
+        parsedSwitchData={parsedSwitchData}
+        savedDevices={savedDevices}
+        onSelectSavedDevice={handleSelectSavedDevice}
+        switchModelId={switchModelId}
+        onModelChange={handleModelChange}
+        onOpenLivePoll={handleOpenLivePoll}
+        onOpenManualUpload={() => {
+          setUploaderMode('manual');
+          setIsUploaderOpen(true);
+        }}
+        isRightInspectorOpen={isRightInspectorOpen}
+        onOpenHwDrawerForDevice={handleOpenHwDrawerForDevice}
+        selectedInventoryEntity={selectedInventoryEntity}
+        onSelectInventoryEntity={setSelectedInventoryEntity}
+      />
 
       {/* =========================================================
-          MAIN WORKSPACE: LEFT/CENTER VIEWPORTS + COLLAPSIBLE RIGHT INSPECTOR
+          MAIN WORKSPACE: FULL-HEIGHT VIEWPORTS + COLLAPSIBLE RIGHT HW DRAWER
          ========================================================= */}
-      <main className="flex-1 flex flex-col lg:flex-row gap-2.5 p-2.5 min-h-0 overflow-hidden">
-        {/* Left/Center Interactive Canvas Column */}
-        <div className="flex-1 flex flex-col gap-2.5 min-w-0 min-h-0">
+      <main className="flex-1 flex flex-col lg:flex-row gap-2 p-2 min-w-0 min-h-0 overflow-hidden">
+        {/* Center Interactive Canvas Column */}
+        <div className="flex-1 flex flex-col gap-2 min-w-0 min-h-0">
           {/* =====================================================
               MODE 1: MULTI-DEVICE 3D NETWORK TOPOLOGY CAMERA SCENE
              ===================================================== */}
@@ -422,6 +313,8 @@ export default function App() {
                   setViewMode('3d');
                   setIsRightInspectorOpen(true);
                 }}
+                onOpenHwDrawer={handleOpenHwDrawerForDevice}
+                onSelectInventoryEntity={setSelectedInventoryEntity}
                 backdropBrightness={backdropBrightness}
               />
             </div>
@@ -587,6 +480,27 @@ export default function App() {
                 >
                   <Tag className="w-3.5 h-3.5" /> Callouts
                 </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsRightInspectorOpen(!isRightInspectorOpen)}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold border transition cursor-pointer ${
+                    isRightInspectorOpen
+                      ? 'bg-sky-500/25 text-sky-200 border-sky-400/60'
+                      : 'bg-slate-800/80 text-sky-300 border-sky-500/40 hover:bg-slate-700'
+                  }`}
+                  title="Toggle Hardware & Port CLI Inspector Drawer for this chassis"
+                >
+                  {isRightInspectorOpen ? (
+                    <>
+                      <PanelRightClose className="w-3.5 h-3.5" /> Hide HW Drawer
+                    </>
+                  ) : (
+                    <>
+                      <PanelRightOpen className="w-3.5 h-3.5" /> HW Drawer
+                    </>
+                  )}
+                </button>
               </div>
             </div>
           )}
@@ -652,6 +566,7 @@ export default function App() {
                 savedDevices={savedDevices}
                 onSelectSavedDevice={handleSelectSavedDevice}
                 onPollNeighbor={handleOpenLivePoll}
+                onOpenHwDrawer={handleOpenHwDrawerForDevice}
               />
             </div>
           )}

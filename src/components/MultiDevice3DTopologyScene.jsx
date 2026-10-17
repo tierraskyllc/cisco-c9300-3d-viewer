@@ -31,7 +31,8 @@ import {
   Activity,
   ArrowUpDown,
   RotateCcw,
-  Save
+  Save,
+  PanelRightOpen
 } from 'lucide-react';
 import {
   GLOBAL_SITES,
@@ -416,6 +417,7 @@ function CoreChassis9606R3D({
   isDragging,
   onSelect,
   onStartDeviceDrag,
+  onOpenHwDrawer,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
@@ -503,7 +505,7 @@ function CoreChassis9606R3D({
         );
       })}
 
-      {/* Floating Compact 3D Badge (Moves with Device in Real Time) */}
+      {/* Floating Compact 3D Badge (Moves with Device in Real Time + Direct [HW] Drawer Button) */}
       {visible && (
         <Html position={[0, 3.35, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -517,12 +519,28 @@ function CoreChassis9606R3D({
                 : 'bg-slate-950/90 border-amber-500/60 hover:border-amber-300'
             }`}
           >
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-[11px] font-mono font-bold text-white">{shortName}</span>
-              <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8px] font-mono font-bold">
-                CORE
-              </span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-[11px] font-mono font-bold text-white">{shortName}</span>
+                <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8px] font-mono font-bold">
+                  CORE
+                </span>
+              </div>
+              {onOpenHwDrawer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect({ type: 'device', data: node, id: node.id, pos: position });
+                    onOpenHwDrawer(node.serialNumber);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
+                  title="Open Hardware & Port Inspector Drawer"
+                >
+                  <PanelRightOpen className="w-2.5 h-2.5" /> HW
+                </button>
+              )}
             </div>
             {showFullDetails && (
               <div className="text-[9px] font-mono text-slate-300 mt-0.5">
@@ -548,6 +566,7 @@ function SwitchC9300Node3D({
   isActiveChassis,
   onSelect,
   onStartDeviceDrag,
+  onOpenHwDrawer,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
@@ -678,7 +697,7 @@ function SwitchC9300Node3D({
         );
       })}
 
-      {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time) */}
+      {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time + Direct [HW] Drawer Button) */}
       {visible && (
         <Html position={[0, 1.75, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -692,15 +711,31 @@ function SwitchC9300Node3D({
                 : 'bg-slate-950/90 border-sky-500/60 hover:border-sky-300'
             }`}
           >
-            <div className="flex items-center gap-1.5">
-              <span
-                className="w-2 h-2 rounded-full"
-                style={{ backgroundColor: accentColor }}
-              />
-              <span className="text-[11px] font-mono font-bold text-white">{node.hostname}</span>
-              <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[8px] font-mono font-bold">
-                {node.isPolled ? 'SQL' : 'CDP'}
-              </span>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <span
+                  className="w-2 h-2 rounded-full"
+                  style={{ backgroundColor: accentColor }}
+                />
+                <span className="text-[11px] font-mono font-bold text-white">{node.hostname}</span>
+                <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[8px] font-mono font-bold">
+                  {node.isPolled ? 'SQL' : 'CDP'}
+                </span>
+              </div>
+              {onOpenHwDrawer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelect({ type: 'device', data: node, id: node.id, pos: position });
+                    onOpenHwDrawer(node.serialNumber);
+                  }}
+                  className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
+                  title={`Open Hardware & Port Drawer for ${node.hostname}`}
+                >
+                  <PanelRightOpen className="w-2.5 h-2.5" /> HW
+                </button>
+              )}
             </div>
             {showFullDetails && (
               <div className="text-[9px] font-mono text-slate-300 mt-0.5">
@@ -902,6 +937,8 @@ export default function MultiDevice3DTopologyScene({
   onSelectSavedDevice,
   onPollNeighbor,
   onSwitchToSingleChassis3D,
+  onOpenHwDrawer,
+  onSelectInventoryEntity,
   backdropBrightness = 0.25
 }) {
   const controlsRef = useRef();
@@ -1392,6 +1429,12 @@ export default function MultiDevice3DTopologyScene({
     setSelected3DEntity(entity);
     setFocusTarget({ id: entity.id, pos: entity.pos });
     setIsDrawerOpen(true);
+    if (onSelectInventoryEntity) {
+      onSelectInventoryEntity(entity);
+    }
+    if (entity.type === 'device' && entity.data?.isPolled && entity.data?.serialNumber && onSelectSavedDevice) {
+      onSelectSavedDevice(entity.data.serialNumber);
+    }
   };
 
   // Background color from brightness slider
@@ -1640,6 +1683,7 @@ export default function MultiDevice3DTopologyScene({
               isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
               onSelect={handleSelectEntity}
               onStartDeviceDrag={handleStartDeviceDrag3D}
+              onOpenHwDrawer={onOpenHwDrawer}
               labelMode={labelMode}
             />
 
@@ -1675,6 +1719,7 @@ export default function MultiDevice3DTopologyScene({
                 isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
                 onSelect={handleSelectEntity}
                 onStartDeviceDrag={handleStartDeviceDrag3D}
+                onOpenHwDrawer={onOpenHwDrawer}
                 labelMode={labelMode}
               />
             )}
@@ -1689,6 +1734,7 @@ export default function MultiDevice3DTopologyScene({
                 isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
                 onSelect={handleSelectEntity}
                 onStartDeviceDrag={handleStartDeviceDrag3D}
+                onOpenHwDrawer={onOpenHwDrawer}
                 labelMode={labelMode}
               />
             )}
@@ -1706,6 +1752,7 @@ export default function MultiDevice3DTopologyScene({
                   isSelected={activeEntity?.id === sw.id}
                   isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
                   onSelect={handleSelectEntity}
+                  onOpenHwDrawer={onOpenHwDrawer}
                   labelMode={labelMode}
                 />
               );
@@ -1916,7 +1963,18 @@ export default function MultiDevice3DTopologyScene({
                       )}
                     </div>
 
-                    <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {onOpenHwDrawer && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenHwDrawer(activeEntity.data.serialNumber)}
+                          className="px-2 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/50 font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer transition"
+                          title="Open Hardware & Port Inspector Drawer for this device"
+                        >
+                          <PanelRightOpen className="w-3.5 h-3.5" />
+                          HW Drawer
+                        </button>
+                      )}
                       {activeEntity.data.isPolled && activeEntity.data.serialNumber && (
                         <button
                           type="button"
@@ -1930,7 +1988,7 @@ export default function MultiDevice3DTopologyScene({
                           }}
                           className="px-2.5 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-white font-mono text-[11px] font-bold cursor-pointer transition"
                         >
-                          Open Single 3D Chassis
+                          Single 3D
                         </button>
                       )}
                       {onPollNeighbor && activeEntity.data.mgmtIp && (

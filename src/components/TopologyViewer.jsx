@@ -44,7 +44,8 @@ export default function TopologyViewer({
   parsedSwitchData,
   savedDevices = [],
   onSelectSavedDevice,
-  onPollNeighbor
+  onPollNeighbor,
+  onOpenHwDrawer
 }) {
   // 4-Level Zoom Architecture:
   // 'isometric-blueprint' (Isometric 3D Engineering Blueprint View with full device telemetry capture)
@@ -644,6 +645,7 @@ export default function TopologyViewer({
             }
           }}
           onPollNeighbor={onPollNeighbor}
+          onOpenHwDrawer={onOpenHwDrawer}
         />
       )}
 
