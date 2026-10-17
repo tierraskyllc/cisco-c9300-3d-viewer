@@ -274,7 +274,7 @@ function pollCiscoSwitchViaSsh({
   username,
   password,
   enableSecret = '',
-  timeoutMs = 45000
+  timeoutMs = 180000
 }) {
   return new Promise((resolve, reject) => {
     const conn = new SshClient();
@@ -321,7 +321,7 @@ function pollCiscoSwitchViaSsh({
         const rawOutputs = {};
         const commandLog = [];
 
-        const waitForPattern = (regex, stepTimeoutMs = 15000) =>
+        const waitForPattern = (regex, stepTimeoutMs = 25000) =>
           new Promise((res, rej) => {
             const start = Date.now();
             const check = () => {
@@ -340,17 +340,17 @@ function pollCiscoSwitchViaSsh({
         const runSession = async () => {
           try {
             // Wait for initial IOS-XE prompt (e.g. Switch> or Switch#)
-            await waitForPattern(/[>#]\s*$/, 12000);
+            await waitForPattern(/[>#]\s*$/, 20000);
 
             // Elevate to enable mode if currently at user exec prompt (>) and enableSecret is provided
             if (/>\s*$/.test(buffer.trim()) && enableSecret) {
               buffer = '';
               stream.write('enable\n');
-              await waitForPattern(/Password:\s*|[>#]\s*$/i, 6000);
+              await waitForPattern(/Password:\s*|[>#]\s*$/i, 10000);
               if (/Password:/i.test(buffer)) {
                 buffer = '';
                 stream.write(`${enableSecret}\n`);
-                await waitForPattern(/[>#]\s*$/, 6000);
+                await waitForPattern(/[>#]\s*$/, 10000);
               }
             }
 
@@ -358,15 +358,15 @@ function pollCiscoSwitchViaSsh({
             for (const initCmd of ['terminal length 0', 'terminal width 511']) {
               buffer = '';
               stream.write(`${initCmd}\n`);
-              await waitForPattern(/[>#]\s*$/, 6000);
+              await waitForPattern(/[>#]\s*$/, 10000);
             }
 
-            // Execute each of the 7 show commands sequentially using unique start/end markers
+            // Execute each of the 7 show commands sequentially (75s per command for large core chassis like tcore-9600)
             for (const item of COMMAND_PLAN) {
               const t0 = Date.now();
               buffer = '';
               stream.write(`${item.cmd}\n`);
-              const rawText = await waitForPattern(/\r?\n[^\r\n]*[>#]\s*$/, 20000);
+              const rawText = await waitForPattern(/\r?\n[^\r\n]*[>#]\s*$/, 75000);
               const durationMs = Date.now() - t0;
 
               // Strip trailing prompt line cleanly while keeping the command header

@@ -18,7 +18,11 @@ import {
   PanelRightOpen,
   Terminal,
   CheckCircle2,
-  Layers
+  Layers,
+  Building2,
+  Eye,
+  EyeOff,
+  Filter
 } from 'lucide-react';
 import { SWITCH_MODELS, getPortCountForModel } from '../data/c9300HardwareData';
 import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkData';
@@ -32,8 +36,9 @@ import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkD
  *    - Hardware Model SKU Dropdown (24-Port / 48-Port)
  *    - Live Poll Switch (SSH) & Upload Show Commands Buttons
  *    - Direct [HW Drawer] Trigger for the Selected Device
- * 3) Categorized Live Network Inventory Tree (Core, Polled Switches, CDP Neighbors, Wi-Fi 6 APs, Campuses & Colos)
- *    - Each switch row includes a direct [HW] icon button to open the right-hand Hardware Drawer.
+ * 3) Building & Device Visibility Filter (Filter by Building code e.g. BAN, CORE, DICK, ROB + toggle individual devices)
+ * 4) Categorized Live Network Inventory Tree (Core, Polled Switches, CDP Neighbors, Wi-Fi 6 APs, Campuses & Colos)
+ *    - Each switch row includes a direct [HW] icon button to open the right-hand Hardware Drawer + [👁] visibility toggle.
  */
 export default function LeftNavInventoryDrawer({
   isOpen,
@@ -53,7 +58,14 @@ export default function LeftNavInventoryDrawer({
   isRightInspectorOpen,
   onOpenHwDrawerForDevice,
   selectedInventoryEntity,
-  onSelectInventoryEntity
+  onSelectInventoryEntity,
+  selectedBuildingFilter = 'ALL',
+  onSelectBuildingFilter,
+  showUnpolledCdpNeighbors = false,
+  onToggleUnpolledCdpNeighbors,
+  hiddenDeviceKeys = [],
+  onToggleDeviceVisibility,
+  onResetDeviceVisibility
 }) {
   const handleToggleOpen = onToggleOpen || onToggle;
   const handleChangeViewMode = onChangeViewMode || onSelectViewMode;
@@ -77,46 +89,63 @@ export default function LeftNavInventoryDrawer({
   }, [savedDevices, parsedSwitchData]);
 
   const activePortCount = getPortCountForModel(switchModelId);
+  const hiddenSet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
 
-  // Categorize all discovered & polled inventory items
+  // Categorize all discovered & polled inventory items (filtered by searchQuery + selectedBuildingFilter)
   const inventory = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    const matches = (str) => !q || String(str || '').toLowerCase().includes(q);
+    const matchesSearch = (str) => !q || String(str || '').toLowerCase().includes(q);
+    const matchesBuilding = (nodeOrEp) => {
+      if (!selectedBuildingFilter || selectedBuildingFilter === 'ALL') return true;
+      if (nodeOrEp.hierarchyTier === 1 || nodeOrEp.buildingCode === 'CORE') {
+        return selectedBuildingFilter === 'CORE' || true; // Always keep Core visible in list for reference
+      }
+      return nodeOrEp.buildingCode === selectedBuildingFilter;
+    };
 
     const switchNodes = globalGraph.switchNodes || [];
 
     const coreSwitches = switchNodes.filter(
       (n) =>
         n.hierarchyTier === 1 &&
-        (matches(n.hostname) || matches(n.mgmtIp) || matches(n.model))
+        (matchesSearch(n.hostname) || matchesSearch(n.mgmtIp) || matchesSearch(n.model))
     );
 
     const polledSwitches = switchNodes.filter(
       (n) =>
         n.isPolled &&
         n.hierarchyTier !== 1 &&
-        (matches(n.hostname) ||
-          matches(n.mgmtIp) ||
-          matches(n.model) ||
-          matches(n.serialNumber))
+        matchesBuilding(n) &&
+        (matchesSearch(n.hostname) ||
+          matchesSearch(n.mgmtIp) ||
+          matchesSearch(n.model) ||
+          matchesSearch(n.serialNumber) ||
+          matchesSearch(n.buildingLabel))
     );
 
     const cdpSwitches = switchNodes.filter(
       (n) =>
         !n.isPolled &&
         n.hierarchyTier !== 1 &&
-        (matches(n.hostname) || matches(n.mgmtIp) || matches(n.model))
+        matchesBuilding(n) &&
+        (matchesSearch(n.hostname) ||
+          matchesSearch(n.mgmtIp) ||
+          matchesSearch(n.model) ||
+          matchesSearch(n.buildingLabel))
     );
 
     // Collect all Wi-Fi 6 APs across all polled switches
     const allAps = [];
     for (const sw of switchNodes) {
+      if (selectedBuildingFilter !== 'ALL' && sw.buildingCode !== selectedBuildingFilter) {
+        continue;
+      }
       for (const ep of sw.attachedEndpoints || []) {
         if (
-          matches(ep.hostname) ||
-          matches(ep.ip) ||
-          matches(ep.model) ||
-          matches(ep.localPort)
+          matchesSearch(ep.hostname) ||
+          matchesSearch(ep.ip) ||
+          matchesSearch(ep.model) ||
+          matchesSearch(ep.localPort)
         ) {
           allAps.push({
             ...ep,
@@ -128,7 +157,7 @@ export default function LeftNavInventoryDrawer({
     }
 
     const campusesAndColos = GLOBAL_SITES.filter(
-      (s) => matches(s.name) || matches(s.code) || matches(s.location)
+      (s) => matchesSearch(s.name) || matchesSearch(s.code) || matchesSearch(s.location)
     );
 
     return {
@@ -136,9 +165,10 @@ export default function LeftNavInventoryDrawer({
       polledSwitches,
       cdpSwitches,
       allAps,
-      campusesAndColos
+      campusesAndColos,
+      buildings: globalGraph.buildings || []
     };
-  }, [globalGraph, searchQuery]);
+  }, [globalGraph, searchQuery, selectedBuildingFilter]);
 
   // Determine the currently focused device for the Contextual Device Card
   const focusedDevice = useMemo(() => {
@@ -443,34 +473,100 @@ export default function LeftNavInventoryDrawer({
         </div>
       </div>
 
-      {/* 4. CATEGORIZED NETWORK INVENTORY TREE */}
+      {/* 4. CATEGORIZED NETWORK INVENTORY TREE + BUILDING & DEVICE VISIBILITY FILTERS */}
       <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* Inventory Search Header */}
-        <div className="p-2.5 pb-1.5 bg-slate-950">
-          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold mb-1.5 px-1 flex items-center justify-between">
-            <span>Categorized Inventory</span>
+        {/* Building & Device Filter Header */}
+        <div className="p-2.5 pb-2 bg-slate-950 border-b border-slate-800/80 space-y-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold px-0.5 flex items-center justify-between">
+            <span className="flex items-center gap-1">
+              <Filter className="w-3 h-3 text-cyan-400" />
+              Building &amp; Device Filter
+            </span>
             <span className="text-emerald-400">
               {inventory.coreSwitches.length +
                 inventory.polledSwitches.length +
                 inventory.cdpSwitches.length +
                 inventory.allAps.length}{' '}
-              Devices
+              Shown
             </span>
           </div>
+
+          {/* Building Filter Selector */}
+          <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1">
+            <Building2 className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+            <span className="text-[10px] font-mono text-slate-400 shrink-0">Bldg:</span>
+            <select
+              value={selectedBuildingFilter}
+              onChange={(e) =>
+                onSelectBuildingFilter && onSelectBuildingFilter(e.target.value)
+              }
+              className="bg-transparent text-[11px] font-mono font-bold text-cyan-300 focus:outline-none cursor-pointer w-full truncate"
+              title="Filter 3D Scene, 2D Blueprint, and Inventory by Campus Building"
+            >
+              <option value="ALL" className="bg-slate-950 text-slate-100">
+                All Campus Buildings ({inventory.buildings.length})
+              </option>
+              {inventory.buildings.map((b) => (
+                <option
+                  key={b.code}
+                  value={b.code}
+                  className="bg-slate-950 text-slate-100"
+                >
+                  {b.label} — {b.polledCount} Polled
+                  {b.unpolledCount > 0 ? `, ${b.unpolledCount} CDP` : ''}
+                  {b.apCount > 0 ? `, ${b.apCount} APs` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Canvas Scope Toggle (Polled Only vs + Unpolled CDP Neighbors) + Hidden Reset */}
+          <div className="flex items-center justify-between gap-1.5">
+            <button
+              type="button"
+              onClick={() =>
+                onToggleUnpolledCdpNeighbors &&
+                onToggleUnpolledCdpNeighbors(!showUnpolledCdpNeighbors)
+              }
+              className={`flex-1 px-2 py-1 rounded-md text-[10px] font-mono font-semibold border flex items-center justify-center gap-1 cursor-pointer transition ${
+                showUnpolledCdpNeighbors
+                  ? 'bg-purple-500/20 text-purple-200 border-purple-400/50'
+                  : 'bg-slate-900 text-emerald-300 border-slate-800 hover:border-slate-700'
+              }`}
+              title="Keep 3D & 2D canvas focused on Polled Switches + Core, or include unpolled CDP switches"
+            >
+              {showUnpolledCdpNeighbors
+                ? '3D/2D: Polled + CDP Neighbors'
+                : '3D/2D: Polled + Core Only'}
+            </button>
+
+            {hiddenDeviceKeys.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onResetDeviceVisibility && onResetDeviceVisibility()}
+                className="px-2 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[10px] font-mono font-bold shrink-0 cursor-pointer transition"
+                title="Unhide all manually hidden devices"
+              >
+                Show All ({hiddenDeviceKeys.length})
+              </button>
+            )}
+          </div>
+
+          {/* Search Input */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
             <Search className="w-3.5 h-3.5 text-slate-400 shrink-0" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Filter hostname, IP, model..."
+              placeholder="Search hostname, building, IP..."
               className="bg-transparent text-xs font-mono text-white focus:outline-none w-full"
             />
           </div>
         </div>
 
         {/* Scrollable Category Accordions */}
-        <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-2 text-xs font-mono">
+        <div className="flex-1 overflow-y-auto px-2.5 pt-2 pb-3 space-y-2 text-xs font-mono">
           {/* CATEGORY 1: TIER 1 CORE BACKBONE */}
           <div className="rounded-xl border border-slate-800/90 bg-slate-900/40 overflow-hidden">
             <button
@@ -495,10 +591,14 @@ export default function LeftNavInventoryDrawer({
               <div className="p-1.5 space-y-1">
                 {inventory.coreSwitches.map((core) => {
                   const isSel = focusedDevice?.data?.hostname === core.hostname;
+                  const isHidden = hiddenSet.has(core.key);
                   return (
                     <div
                       key={core.id}
                       onClick={() => {
+                        if (core.isPolled && core.serialNumber) {
+                          onSelectSavedDevice(core.serialNumber);
+                        }
                         if (onSelectInventoryEntity) {
                           onSelectInventoryEntity({
                             type: 'device',
@@ -508,30 +608,66 @@ export default function LeftNavInventoryDrawer({
                         }
                       }}
                       className={`p-2 rounded-lg border flex items-center justify-between gap-1.5 cursor-pointer transition ${
+                        isHidden ? 'opacity-45 ' : ''
+                      }${
                         isSel
                           ? 'bg-amber-950/50 border-amber-400'
                           : 'bg-slate-950/80 border-slate-800/80 hover:border-amber-500/50'
                       }`}
                     >
                       <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-white truncate">
-                          {core.hostname}
+                        <div className="flex items-center gap-1">
+                          <span
+                            className={`w-2 h-2 rounded-full shrink-0 ${
+                              core.isPolled ? 'bg-emerald-400' : 'bg-amber-400'
+                            }`}
+                          />
+                          <span className="text-[11px] font-bold text-white truncate">
+                            {core.hostname}
+                          </span>
                         </div>
                         <div className="text-[9.5px] text-slate-400 truncate">
                           {core.model} • <span className="text-emerald-300">{core.mgmtIp}</span>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenLivePoll(core.mgmtIp, core.hostname);
-                        }}
-                        className="px-1.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold shrink-0 cursor-pointer"
-                        title="Poll Core Switch via SSH"
-                      >
-                        SSH
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {onToggleDeviceVisibility && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleDeviceVisibility(core.key);
+                            }}
+                            className={`p-1 rounded border cursor-pointer transition ${
+                              isHidden
+                                ? 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                                : 'bg-slate-900 text-emerald-400 border-slate-700 hover:text-white'
+                            }`}
+                            title={
+                              isHidden
+                                ? `Show ${core.hostname} in 3D/2D views`
+                                : `Hide ${core.hostname} from 3D/2D views`
+                            }
+                          >
+                            {isHidden ? (
+                              <EyeOff className="w-3 h-3" />
+                            ) : (
+                              <Eye className="w-3 h-3" />
+                            )}
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenLivePoll(core.mgmtIp, core.hostname);
+                          }}
+                          className="px-1.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold shrink-0 cursor-pointer"
+                          title="Poll Core Switch via SSH"
+                        >
+                          SSH
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -564,6 +700,7 @@ export default function LeftNavInventoryDrawer({
                 {inventory.polledSwitches.map((sw) => {
                   const isActiveSwitch =
                     parsedSwitchData?.device?.serialNumber === sw.serialNumber;
+                  const isHidden = hiddenSet.has(sw.key);
                   return (
                     <div
                       key={sw.id}
@@ -580,6 +717,8 @@ export default function LeftNavInventoryDrawer({
                         }
                       }}
                       className={`p-2 rounded-lg border flex items-center justify-between gap-1.5 cursor-pointer transition ${
+                        isHidden ? 'opacity-45 ' : ''
+                      }${
                         isActiveSwitch
                           ? 'bg-sky-950/60 border-sky-400'
                           : 'bg-slate-950/80 border-slate-800/80 hover:border-sky-500/50'
@@ -593,23 +732,51 @@ export default function LeftNavInventoryDrawer({
                           </span>
                         </div>
                         <div className="text-[9.5px] text-slate-400 truncate">
-                          {sw.model} • <span className="text-sky-300">{sw.mgmtIp}</span>
+                          <span className="text-cyan-300">[{sw.buildingCode}]</span> {sw.model} •{' '}
+                          <span className="text-sky-300">{sw.mgmtIp}</span>
                         </div>
                       </div>
 
-                      {/* Direct [HW] Drawer Icon on Device Row */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenHwDrawerForDevice(sw.serialNumber);
-                        }}
-                        className="px-1.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500 text-sky-300 hover:text-slate-950 border border-sky-500/40 text-[9px] font-bold flex items-center gap-0.5 shrink-0 cursor-pointer transition"
-                        title={`Open Hardware & Port Drawer for ${sw.hostname}`}
-                      >
-                        <PanelRightOpen className="w-3 h-3" />
-                        HW
-                      </button>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {onToggleDeviceVisibility && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleDeviceVisibility(sw.key);
+                            }}
+                            className={`p-1 rounded border cursor-pointer transition ${
+                              isHidden
+                                ? 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                                : 'bg-slate-900 text-emerald-400 border-slate-700 hover:text-white'
+                            }`}
+                            title={
+                              isHidden
+                                ? `Show ${sw.hostname} in 3D/2D views`
+                                : `Hide ${sw.hostname} from 3D/2D views`
+                            }
+                          >
+                            {isHidden ? (
+                              <EyeOff className="w-3 h-3" />
+                            ) : (
+                              <Eye className="w-3 h-3" />
+                            )}
+                          </button>
+                        )}
+                        {/* Direct [HW] Drawer Icon on Device Row */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenHwDrawerForDevice(sw.serialNumber);
+                          }}
+                          className="px-1.5 py-1 rounded bg-sky-500/20 hover:bg-sky-500 text-sky-300 hover:text-slate-950 border border-sky-500/40 text-[9px] font-bold flex items-center gap-0.5 shrink-0 cursor-pointer transition"
+                          title={`Open Hardware & Port Drawer for ${sw.hostname}`}
+                        >
+                          <PanelRightOpen className="w-3 h-3" />
+                          HW
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -640,40 +807,74 @@ export default function LeftNavInventoryDrawer({
 
               {expandedCategories.cdpSwitches && (
                 <div className="p-1.5 space-y-1">
-                  {inventory.cdpSwitches.map((sw) => (
-                    <div
-                      key={sw.id}
-                      onClick={() => {
-                        if (onSelectInventoryEntity) {
-                          onSelectInventoryEntity({
-                            type: 'device',
-                            id: sw.id,
-                            data: sw
-                          });
-                        }
-                      }}
-                      className="p-2 rounded-lg bg-slate-950/80 border border-slate-800/80 hover:border-purple-500/50 flex items-center justify-between gap-1.5 cursor-pointer transition"
-                    >
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-bold text-white truncate">
-                          {sw.hostname}
+                  {inventory.cdpSwitches.map((sw) => {
+                    const isHidden = hiddenSet.has(sw.key);
+                    return (
+                      <div
+                        key={sw.id}
+                        onClick={() => {
+                          if (onSelectInventoryEntity) {
+                            onSelectInventoryEntity({
+                              type: 'device',
+                              id: sw.id,
+                              data: sw
+                            });
+                          }
+                        }}
+                        className={`p-2 rounded-lg bg-slate-950/80 border border-slate-800/80 hover:border-purple-500/50 flex items-center justify-between gap-1.5 cursor-pointer transition ${
+                          isHidden ? 'opacity-45' : ''
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-white truncate">
+                            {sw.hostname}
+                          </div>
+                          <div className="text-[9.5px] text-slate-400 truncate">
+                            <span className="text-purple-300">[{sw.buildingCode}]</span> {sw.model}{' '}
+                            • {sw.mgmtIp}
+                          </div>
                         </div>
-                        <div className="text-[9.5px] text-slate-400 truncate">
-                          {sw.model} • {sw.mgmtIp}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {onToggleDeviceVisibility && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onToggleDeviceVisibility(sw.key);
+                              }}
+                              className={`p-1 rounded border cursor-pointer transition ${
+                                isHidden
+                                  ? 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-300'
+                                  : 'bg-slate-900 text-purple-300 border-slate-700 hover:text-white'
+                              }`}
+                              title={
+                                isHidden
+                                  ? `Show ${sw.hostname}`
+                                  : `Hide ${sw.hostname}`
+                              }
+                            >
+                              {isHidden ? (
+                                <EyeOff className="w-3 h-3" />
+                              ) : (
+                                <Eye className="w-3 h-3" />
+                              )}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenLivePoll(sw.mgmtIp, sw.hostname);
+                            }}
+                            className="px-1.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold shrink-0 cursor-pointer"
+                            title={`Poll ${sw.hostname} via SSH`}
+                          >
+                            SSH
+                          </button>
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenLivePoll(sw.mgmtIp, sw.hostname);
-                        }}
-                        className="px-1.5 py-1 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-300 border border-emerald-500/40 text-[9px] font-bold shrink-0 cursor-pointer"
-                      >
-                        SSH
-                      </button>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

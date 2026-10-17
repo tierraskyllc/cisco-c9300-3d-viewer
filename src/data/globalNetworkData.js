@@ -284,6 +284,78 @@ export function normalizeHostname(name = '') {
     .toUpperCase();
 }
 
+// Known FDU Building Codes & Friendly Names (automatically supplemented by any <CAMPUS>-<CODE>-* prefix discovered via CDP)
+export const FDU_BUILDING_DIRECTORY = {
+  CORE: 'Campus Core Backbone (CORE)',
+  BAN: 'Bancroft Hall (BAN)',
+  DICK: 'Dickinson Hall (DICK)',
+  DIC: 'Dickinson Hall (DIC)',
+  ROB: 'Robison Hall (ROB)',
+  LIB: 'Giovatto Library (LIB)',
+  GIO: 'Giovatto Library (GIO)',
+  SUB: 'Student Union Building (SUB)',
+  STU: 'Student Union Building (STU)',
+  BEC: 'Becton Hall (BEC)',
+  WIL: 'Williams Hall (WIL)',
+  ALU: 'Alumni Hall (ALU)',
+  KRO: 'Kron Building (KRO)',
+  MON: 'Monninger Center (MON)',
+  HEN: 'Hennessy Hall (HEN)',
+  ZEN: 'Zenith Building (ZEN)',
+   MAN: 'Mansion / Hartman Hall (MAN)',
+  GYM: 'Rothman Center / Gym (GYM)',
+  ROTH: 'Rothman Center (ROTH)',
+  SCI: 'Science Building (SCI)',
+  PARK: 'Park Ave Residence (PARK)',
+  LIND: 'Linden Residence (LIND)',
+   NORTH: 'Northpointe Hall (NORTH)',
+  CHIL: 'Chalet / Academic (CHIL)'
+};
+
+export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole = '') {
+  const norm = normalizeHostname(hostname);
+  const bldgHint = String(rawBuildingName || '').trim();
+
+  if (
+    nodeRole === 'core-switch' ||
+    /^TCORE|^FCORE|CORE-9600|C9606/i.test(norm)
+  ) {
+    return {
+      buildingCode: 'CORE',
+      buildingLabel: FDU_BUILDING_DIRECTORY.CORE
+    };
+  }
+
+  // Match FDU hostname pattern: <CAMPUS_LETTER>-<BUILDING_CODE>-... (e.g. T-BAN-2FL-WL, F-MON-1FL-SW1, V-OAK-2FL)
+  const prefixMatch = norm.match(/^[TFVH]-([A-Z0-9]{2,8})-/i);
+  if (prefixMatch) {
+    const code = prefixMatch[1].toUpperCase();
+    return {
+      buildingCode: code,
+      buildingLabel: FDU_BUILDING_DIRECTORY[code] || `${code} Building (${code})`
+    };
+  }
+
+  // Also check if hostname or buildingName explicitly mentions Bancroft or another known code
+  if (/BANCROFT|\bBAN\b/i.test(`${norm} ${bldgHint}`)) {
+    return {
+      buildingCode: 'BAN',
+      buildingLabel: FDU_BUILDING_DIRECTORY.BAN
+    };
+  }
+
+  for (const [code, label] of Object.entries(FDU_BUILDING_DIRECTORY)) {
+    if (code !== 'CORE' && new RegExp(`\\b${code}\\b`, 'i').test(`${norm} ${bldgHint}`)) {
+      return { buildingCode: code, buildingLabel: label };
+    }
+  }
+
+  return {
+    buildingCode: 'OTHER',
+    buildingLabel: bldgHint && !bldgHint.startsWith('Connected via') ? bldgHint : 'Other Campus / IDF'
+  };
+}
+
 // Determine if a CDP neighbor is a Wireless AP / Phone / Endpoint vs a Switch / Core Router
 export function isWirelessOrEndpoint(platform = '', capabilities = '', hostname = '') {
   const p = String(platform).toUpperCase();
@@ -410,6 +482,14 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     const connectedPorts = ports.filter((p) => p.status === 'up').length;
     const totalPoeWatts = ports.reduce((acc, p) => acc + (p.poeWatts || 0), 0);
 
+    const nodeRole =
+      siteCode === 'Halsey165' || siteCode === 'Hastings'
+        ? 'colocation-switch'
+        : /C9600|C9606|C9500|CORE/i.test(`${model} ${hostname}`)
+        ? 'core-switch'
+        : 'campus-switch';
+    const bldgInfo = inferBuildingInfo(hostname, dev.building_name, nodeRole);
+
     const node = {
       id: normHost,
       key: normHost,
@@ -421,15 +501,12 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       iosVersion: snap.device?.iosVersion || dev.ios_version || '17.x',
       mgmtIp,
       siteCode,
-      buildingName: dev.building_name || 'Campus MDF/IDF',
+      buildingCode: bldgInfo.buildingCode,
+      buildingLabel: bldgInfo.buildingLabel,
+      buildingName: dev.building_name || bldgInfo.buildingLabel,
       isPolled: true,
       isSwitchNode: true,
-      nodeRole:
-        siteCode === 'Halsey165' || siteCode === 'Hastings'
-          ? 'colocation-switch'
-          : /C9600|C9606|C9500|CORE/i.test(`${model} ${hostname}`)
-          ? 'core-switch'
-          : 'campus-switch',
+      nodeRole,
       connectedPorts,
       totalPorts: ports.length || (model.includes('-24') ? 24 : 48),
       totalPoeWatts,
@@ -497,6 +574,16 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           const isCoreChassis = /C9600|C9606|C9500|CORE|NEXUS/i.test(
             `${cleanPlatform} ${targetRawHost}`
           );
+          const targetRole = isCoreChassis
+            ? 'core-switch'
+            : isSwitchOrRouter
+            ? 'unpolled-switch'
+            : 'endpoint-device';
+          const targetBldg = inferBuildingInfo(
+            targetRawHost,
+            isEndpoint ? sourceNode.buildingLabel : '',
+            targetRole
+          );
           targetNode = {
             id: targetNorm,
             key: targetNorm,
@@ -508,14 +595,18 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             iosVersion: cdp.softwareVersion || 'Discovered via CDP',
             mgmtIp: cdp.neighborIp || '—',
             siteCode: inferredSite,
+            buildingCode:
+              targetBldg.buildingCode === 'OTHER' && isEndpoint
+                ? sourceNode.buildingCode
+                : targetBldg.buildingCode,
+            buildingLabel:
+              targetBldg.buildingCode === 'OTHER' && isEndpoint
+                ? sourceNode.buildingLabel
+                : targetBldg.buildingLabel,
             buildingName: `Connected via ${sourceHost} (${localPort})`,
             isPolled: false,
             isSwitchNode: isSwitchOrRouter,
-            nodeRole: isCoreChassis
-              ? 'core-switch'
-              : isSwitchOrRouter
-              ? 'unpolled-switch'
-              : 'endpoint-device',
+            nodeRole: targetRole,
             connectedPorts: 1,
             totalPorts: cleanPlatform.includes('-24') ? 24 : 48,
             totalPoeWatts: 0,
@@ -540,7 +631,9 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             model: cdp.platform ? cdp.platform.replace(/^cisco\s+/i, '').trim() : 'AP',
             localPort,
             remotePort,
-            poeWatts: cdp.powerWatts || 0
+            poeWatts: cdp.powerWatts || 0,
+            buildingCode: sourceNode.buildingCode || 'BAN',
+            buildingLabel: sourceNode.buildingLabel || FDU_BUILDING_DIRECTORY.BAN
           });
         }
       }
@@ -575,6 +668,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           sourceIp: sourceNode.mgmtIp,
           sourcePort: localPort || '—',
           sourceIsPolled: sourceNode.isPolled,
+          sourceBuildingCode: sourceNode.buildingCode,
           targetKey: targetNode.key,
           targetHostname: targetNode.hostname,
           targetModel: targetNode.model,
@@ -583,6 +677,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           targetIsPolled: targetNode.isPolled,
           targetRole: targetNode.nodeRole,
           targetSerial: targetNode.serialNumber,
+          targetBuildingCode: targetNode.buildingCode,
           isSwitchInterconnect: Boolean(sourceNode.isSwitchNode && targetNode.isSwitchNode),
           mediaCategory: mediaInfo.category,
           mediaLabel: mediaInfo.label,
@@ -636,7 +731,38 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     }
   }
 
-  // Step 4: Compute Per-Site Summary Rollups for Metro, Florham, Halsey165, VancOakridge, Hastings
+  // Step 4: Build Discovered & Polled Buildings Directory (for Building / Device Filtering)
+  const buildingMap = new Map();
+  for (const sw of switchNodes) {
+    const code = sw.buildingCode || 'OTHER';
+    const label = sw.buildingLabel || FDU_BUILDING_DIRECTORY[code] || `${code} Building`;
+    if (!buildingMap.has(code)) {
+      buildingMap.set(code, {
+        code,
+        label,
+        switchCount: 0,
+        polledCount: 0,
+        unpolledCount: 0,
+        apCount: 0
+      });
+    }
+    const b = buildingMap.get(code);
+    b.switchCount += 1;
+    if (sw.isPolled) b.polledCount += 1;
+    else b.unpolledCount += 1;
+    b.apCount += (sw.attachedEndpoints || []).length;
+  }
+
+  const buildings = Array.from(buildingMap.values()).sort((a, b) => {
+    if (a.code === 'BAN') return -1;
+    if (b.code === 'BAN') return 1;
+    if (a.code === 'CORE') return -1;
+    if (b.code === 'CORE') return 1;
+    if (b.polledCount !== a.polledCount) return b.polledCount - a.polledCount;
+    return b.switchCount - a.switchCount;
+  });
+
+  // Step 5: Compute Per-Site Summary Rollups for Metro, Florham, Halsey165, VancOakridge, Hastings
   const siteStats = {};
   for (const site of GLOBAL_SITES) {
     const siteKey = site.code;
@@ -668,6 +794,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     switchNodes,
     links: allLinks,
     switchLinks,
+    buildings,
     siteStats,
     siteSummary: siteStats
   };

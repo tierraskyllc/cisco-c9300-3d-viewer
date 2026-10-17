@@ -32,7 +32,8 @@ import {
   ArrowUpDown,
   RotateCcw,
   Save,
-  PanelRightOpen
+  PanelRightOpen,
+  Building2
 } from 'lucide-react';
 import {
   GLOBAL_SITES,
@@ -988,7 +989,11 @@ export default function MultiDevice3DTopologyScene({
   onSwitchToSingleChassis3D,
   onOpenHwDrawer,
   onSelectInventoryEntity,
-  backdropBrightness = 0.25
+  backdropBrightness = 0.25,
+  selectedBuildingFilter = 'ALL',
+  onSelectBuildingFilter,
+  showUnpolledCdpNeighbors = false,
+  hiddenDeviceKeys = []
 }) {
   const controlsRef = useRef();
   const [cameraPreset, setCameraPreset] = useState('blueprint-iso');
@@ -1226,17 +1231,48 @@ export default function MultiDevice3DTopologyScene({
     return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData);
   }, [savedDevices, parsedSwitchData]);
 
+  const hiddenSet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
+
+  // Helper to check if a switch node passes the Building & Device Visibility filters
+  const isSwitchVisibleIn3D = useCallback(
+    (node) => {
+      if (!node) return false;
+      if (hiddenSet.has(node.key) || hiddenSet.has(node.id)) return false;
+      if (node.hierarchyTier === 1 || node.buildingCode === 'CORE') {
+        return true;
+      }
+      if (selectedBuildingFilter && selectedBuildingFilter !== 'ALL') {
+        if (selectedBuildingFilter === 'CORE') return false;
+        if (node.buildingCode !== selectedBuildingFilter) return false;
+      }
+      // If unpolled CDP switch, only show in 3D when showUnpolledCdpNeighbors is on OR user specifically filtered to an unpolled building
+      if (!node.isPolled) {
+        const isSpecificUnpolledBuilding =
+          selectedBuildingFilter &&
+          selectedBuildingFilter !== 'ALL' &&
+          selectedBuildingFilter !== 'BAN';
+        if (!showUnpolledCdpNeighbors && !isSpecificUnpolledBuilding) {
+          return false;
+        }
+      }
+      return true;
+    },
+    [hiddenSet, selectedBuildingFilter, showUnpolledCdpNeighbors]
+  );
+
   // Identify live nodes
-  const coreNode = useMemo(() => {
+  const rawCoreNode = useMemo(() => {
     return (
       globalGraph.switchNodes.find((n) => n.hierarchyTier === 1) || {
-        id: 'tcore-9600',
+        id: 'TCORE-9600',
+        key: 'TCORE-9600',
         hostname: 'tcore-9600.net.fdu.edu',
-        mgmtIp: '132.238.1.40',
+        mgmtIp: '132.238.94.2',
         model: 'Cisco C9606R',
         iosVersion: '17.12.4',
         role: 'Campus Core Switch',
         siteCode: 'Metro',
+        buildingCode: 'CORE',
         isPolled: false,
         hierarchyTier: 1,
         switchLinks: [
@@ -1262,29 +1298,38 @@ export default function MultiDevice3DTopologyScene({
     );
   }, [globalGraph]);
 
-  const wlNode = useMemo(() => {
+  const coreNode = useMemo(() => {
+    return isSwitchVisibleIn3D(rawCoreNode) ? rawCoreNode : null;
+  }, [rawCoreNode, isSwitchVisibleIn3D]);
+
+  const rawWlNode = useMemo(() => {
     return (
       globalGraph.switchNodes.find((n) => n.hostname.includes('T-BAN-2FL-WL')) ||
-      globalGraph.switchNodes[0]
+      globalGraph.switchNodes.find((n) => n.hierarchyTier !== 1)
     );
+  }, [globalGraph]);
+
+  const wlNode = useMemo(() => {
+    return isSwitchVisibleIn3D(rawWlNode) ? rawWlNode : null;
+  }, [rawWlNode, isSwitchVisibleIn3D]);
+
+  const rawWorkStudyNode = useMemo(() => {
+    return globalGraph.switchNodes.find((n) => n.hostname.includes('WorkStudy'));
   }, [globalGraph]);
 
   const workStudyNode = useMemo(() => {
-    return (
-      globalGraph.switchNodes.find((n) => n.hostname.includes('WorkStudy')) ||
-      globalGraph.switchNodes[1]
-    );
-  }, [globalGraph]);
+    return isSwitchVisibleIn3D(rawWorkStudyNode) ? rawWorkStudyNode : null;
+  }, [rawWorkStudyNode, isSwitchVisibleIn3D]);
 
-  // Any additional switches discovered beyond the initial 3 (for when tcore/mcore or more closets are polled)
+  // Any additional switches discovered beyond the initial 3 (filtered by Building & Polled/CDP Scope!)
   const additionalSwitches = useMemo(() => {
-    const coreId = coreNode?.id;
-    const wlId = wlNode?.id;
-    const wsId = workStudyNode?.id;
+    const coreId = rawCoreNode?.id;
+    const wlId = rawWlNode?.id;
+    const wsId = rawWorkStudyNode?.id;
     return globalGraph.switchNodes.filter(
-      (n) => n.id !== coreId && n.id !== wlId && n.id !== wsId
+      (n) => n.id !== coreId && n.id !== wlId && n.id !== wsId && isSwitchVisibleIn3D(n)
     );
-  }, [globalGraph.switchNodes, coreNode, wlNode, workStudyNode]);
+  }, [globalGraph.switchNodes, rawCoreNode, rawWlNode, rawWorkStudyNode, isSwitchVisibleIn3D]);
 
   // Group all switches by building prefix (ready for tcore / mcore 300+ CDP neighbors)
   const buildingClusters = useMemo(() => {
@@ -1308,7 +1353,8 @@ export default function MultiDevice3DTopologyScene({
   }, [globalGraph.switchNodes]);
 
   const attachedAps = useMemo(() => {
-    return wlNode?.attachedEndpoints || [];
+    if (!wlNode) return [];
+    return wlNode.attachedEndpoints || [];
   }, [wlNode]);
 
   // Compute live 3D Coordinates for Every Device from its Parent Square Base + Relative Device Offset
@@ -1359,90 +1405,96 @@ export default function MultiDevice3DTopologyScene({
     const list = [];
 
     // 1. Dual 25G Fiber Uplinks: T-BAN-2FL-WL (Tw1/1/1 & Tw1/1/2 in C9300-NM-8X bay) <-> tcore-9600 (Tw2/2/0/35 & Tw1/2/0/35)
-    list.push({
-      id: 'fiber-uplink-1',
-      isPrimaryTrunk: true,
-      verified: true,
-      color: '#f97316',
-      radius: 0.095,
-      badgeTitle: '25G FIBER #1: Tw1/1/1 ↔ Tw2/2/0/35',
-      badgeSubtitle: 'T-BAN-2FL-WL ↔ tcore-9600 • VLANs 8,11,94-97,133,268,270,273,2012',
-      sourceHostname: 'T-BAN-2FL-WL',
-      sourcePort: 'Tw1/1/1',
-      targetHostname: 'tcore-9600.net.fdu.edu',
-      targetPort: 'Tw2/2/0/35',
-      speed: '25G SFP28 Fiber',
-      nativeVlan: '1',
-      allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: getC9300UplinkWorldPos(positions.wlPos, 0),
-      endPos: [positions.corePos[0] + 0.5, 1.5, positions.corePos[2] + 1.2]
-    });
+    if (wlNode && coreNode) {
+      list.push({
+        id: 'fiber-uplink-1',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#f97316',
+        radius: 0.095,
+        badgeTitle: '25G FIBER #1: Tw1/1/1 ↔ Tw2/2/0/35',
+        badgeSubtitle: 'T-BAN-2FL-WL ↔ tcore-9600 • VLANs 8,11,94-97,133,268,270,273,2012',
+        sourceHostname: 'T-BAN-2FL-WL',
+        sourcePort: 'Tw1/1/1',
+        targetHostname: 'tcore-9600.net.fdu.edu',
+        targetPort: 'Tw2/2/0/35',
+        speed: '25G SFP28 Fiber',
+        nativeVlan: '1',
+        allowedVlans: '8,11,94-97,133,268,270,273,2012',
+        startPos: getC9300UplinkWorldPos(positions.wlPos, 0),
+        endPos: [positions.corePos[0] + 0.5, 1.5, positions.corePos[2] + 1.2]
+      });
 
-    list.push({
-      id: 'fiber-uplink-2',
-      isPrimaryTrunk: false,
-      verified: true,
-      color: '#fb923c',
-      radius: 0.085,
-      badgeTitle: '25G FIBER #2: Tw1/1/2 ↔ Tw1/2/0/35',
-      badgeSubtitle: 'Redundant Core Uplink • 802.1Q Trunk',
-      sourceHostname: 'T-BAN-2FL-WL',
-      sourcePort: 'Tw1/1/2',
-      targetHostname: 'tcore-9600.net.fdu.edu',
-      targetPort: 'Tw1/2/0/35',
-      speed: '25G SFP28 Fiber',
-      nativeVlan: '1',
-      allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: getC9300UplinkWorldPos(positions.wlPos, 1),
-      endPos: [positions.corePos[0] + 0.9, 1.2, positions.corePos[2] + 1.2]
-    });
+      list.push({
+        id: 'fiber-uplink-2',
+        isPrimaryTrunk: false,
+        verified: true,
+        color: '#fb923c',
+        radius: 0.085,
+        badgeTitle: '25G FIBER #2: Tw1/1/2 ↔ Tw1/2/0/35',
+        badgeSubtitle: 'Redundant Core Uplink • 802.1Q Trunk',
+        sourceHostname: 'T-BAN-2FL-WL',
+        sourcePort: 'Tw1/1/2',
+        targetHostname: 'tcore-9600.net.fdu.edu',
+        targetPort: 'Tw1/2/0/35',
+        speed: '25G SFP28 Fiber',
+        nativeVlan: '1',
+        allowedVlans: '8,11,94-97,133,268,270,273,2012',
+        startPos: getC9300UplinkWorldPos(positions.wlPos, 1),
+        endPos: [positions.corePos[0] + 0.9, 1.2, positions.corePos[2] + 1.2]
+      });
+    }
 
     // 2. Bi-Directionally Verified 10G mGig Trunk: T-BAN-2FL-WL (Te1/0/20) <-> T-BAN-2FL-WorkStudy-C9300 (Te1/0/24)
-    list.push({
-      id: 'switch-trunk-20-24',
-      isPrimaryTrunk: true,
-      verified: true,
-      color: '#10b981',
-      radius: 0.105,
-      badgeTitle: '10G TRUNK: Te1/0/20 ↔ Te1/0/24',
-      badgeSubtitle: 'Native VLAN 133 • Allowed: 8,11,94-97,133,268,270,273,2012',
-      sourceHostname: 'T-BAN-2FL-WL',
-      sourcePort: 'Te1/0/20',
-      targetHostname: 'T-BAN-2FL-WorkStudy-C9300',
-      targetPort: 'Te1/0/24',
-      speed: '10G mGig Trunk (1000Mbps)',
-      nativeVlan: '133',
-      allowedVlans: '8,11,94-97,133,268,270,273,2012',
-      startPos: getC9300PortWorldPos(positions.wlPos, 20, true),
-      endPos: getC9300PortWorldPos(positions.wsPos, 24, true)
-    });
+    if (wlNode && workStudyNode) {
+      list.push({
+        id: 'switch-trunk-20-24',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#10b981',
+        radius: 0.105,
+        badgeTitle: '10G TRUNK: Te1/0/20 ↔ Te1/0/24',
+        badgeSubtitle: 'Native VLAN 133 • Allowed: 8,11,94-97,133,268,270,273,2012',
+        sourceHostname: 'T-BAN-2FL-WL',
+        sourcePort: 'Te1/0/20',
+        targetHostname: 'T-BAN-2FL-WorkStudy-C9300',
+        targetPort: 'Te1/0/24',
+        speed: '10G mGig Trunk (1000Mbps)',
+        nativeVlan: '133',
+        allowedVlans: '8,11,94-97,133,268,270,273,2012',
+        startPos: getC9300PortWorldPos(positions.wlPos, 20, true),
+        endPos: getC9300PortWorldPos(positions.wsPos, 24, true)
+      });
+    }
 
     // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL exact front-panel RJ-45 ports
-    positions.apPositions.forEach(({ ap, pos }, idx) => {
-      const m = String(ap.localPort || '').match(/\/(\d+)$/);
-      const portNum = m ? parseInt(m[1], 10) : idx + 1;
-      list.push({
-        id: `ap-link-${ap.localPort}`,
-        isPrimaryTrunk: false,
-        verified: false,
-        color: '#38bdf8',
-        radius: 0.055,
-        badgeTitle: `${ap.localPort} → ${ap.hostname}`,
-        badgeSubtitle: `${ap.model} • ${ap.ip} • ${ap.poeWatts}W UPOE`,
-        sourceHostname: 'T-BAN-2FL-WL',
-        sourcePort: ap.localPort,
-        targetHostname: ap.hostname,
-        targetPort: 'GigabitEthernet0',
-        speed: 'mGig UPOE (802.3bt)',
-        nativeVlan: '25',
-        allowedVlans: 'Access / Capwap',
-        startPos: getC9300PortWorldPos(positions.wlPos, portNum, true),
-        endPos: [pos[0], 0.3, pos[2]]
+    if (wlNode) {
+      positions.apPositions.forEach(({ ap, pos }, idx) => {
+        const m = String(ap.localPort || '').match(/\/(\d+)$/);
+        const portNum = m ? parseInt(m[1], 10) : idx + 1;
+        list.push({
+          id: `ap-link-${ap.localPort}`,
+          isPrimaryTrunk: false,
+          verified: false,
+          color: '#38bdf8',
+          radius: 0.055,
+          badgeTitle: `${ap.localPort} → ${ap.hostname}`,
+          badgeSubtitle: `${ap.model} • ${ap.ip} • ${ap.poeWatts}W UPOE`,
+          sourceHostname: 'T-BAN-2FL-WL',
+          sourcePort: ap.localPort,
+          targetHostname: ap.hostname,
+          targetPort: 'GigabitEthernet0',
+          speed: 'mGig UPOE (802.3bt)',
+          nativeVlan: '25',
+          allowedVlans: 'Access / Capwap',
+          startPos: getC9300PortWorldPos(positions.wlPos, portNum, true),
+          endPos: [pos[0], 0.3, pos[2]]
+        });
       });
-    });
+    }
 
     // 4. Core to Colocation Dark Fiber Conduit
-    if (positions.coloSites.length > 0) {
+    if (coreNode && positions.coloSites.length > 0) {
       const halsey = positions.coloSites[0];
       list.push({
         id: 'wan-core-halsey165',
@@ -1465,7 +1517,7 @@ export default function MultiDevice3DTopologyScene({
     }
 
     return list;
-  }, [positions]);
+  }, [positions, wlNode, workStudyNode, coreNode]);
 
   // Selected entity in the 3D scene (defaults to T-BAN-2FL-WL so the drawer immediately shows rich telemetry)
   const [selected3DEntity, setSelected3DEntity] = useState(null);
@@ -1555,6 +1607,28 @@ export default function MultiDevice3DTopologyScene({
             <RotateCcw className="w-3 h-3" />
             Reset 3D
           </button>
+
+          {/* Quick Building Filter in 3D HUD Bar */}
+          {onSelectBuildingFilter && (
+            <div className="flex items-center gap-1 bg-slate-900 border border-cyan-500/40 rounded-md px-2 py-0.5">
+              <Building2 className="w-3 h-3 text-cyan-400 shrink-0" />
+              <select
+                value={selectedBuildingFilter}
+                onChange={(e) => onSelectBuildingFilter(e.target.value)}
+                className="bg-transparent text-[10px] font-mono font-bold text-cyan-300 focus:outline-none cursor-pointer"
+                title="Filter 3D scene by Campus Building"
+              >
+                <option value="ALL" className="bg-slate-950 text-slate-100">
+                  All Buildings ({(globalGraph.buildings || []).length})
+                </option>
+                {(globalGraph.buildings || []).map((b) => (
+                  <option key={b.code} value={b.code} className="bg-slate-950 text-slate-100">
+                    {b.label} ({b.switchCount})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] flex items-center gap-1">
             <Save className="w-3 h-3" />
@@ -1758,17 +1832,19 @@ export default function MultiDevice3DTopologyScene({
               onStartPadDrag={handleStartPadDrag3D}
             />
 
-            <CoreChassis9606R3D
-              deviceId="coreNode"
-              node={coreNode}
-              position={positions.corePos}
-              isSelected={activeEntity?.id === coreNode.id}
-              isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
-              onSelect={handleSelectEntity}
-              onStartDeviceDrag={handleStartDeviceDrag3D}
-              onOpenHwDrawer={onOpenHwDrawer}
-              labelMode={labelMode}
-            />
+            {coreNode && (
+              <CoreChassis9606R3D
+                deviceId="coreNode"
+                node={coreNode}
+                position={positions.corePos}
+                isSelected={activeEntity?.id === coreNode.id}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
+                onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
+                onOpenHwDrawer={onOpenHwDrawer}
+                labelMode={labelMode}
+              />
+            )}
 
             {/* ===============================================================
                 ZONE PAD 2: BANCROFT HALL MDF / IDF SWITCH FABRIC ZONE

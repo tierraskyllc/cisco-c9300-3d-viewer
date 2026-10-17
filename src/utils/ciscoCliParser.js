@@ -26,8 +26,9 @@ export function normalizeInterfaceName(rawName = '') {
 }
 
 export function extractDownlinkPortNumber(normName = '') {
-  // Matches Gi1/0/1..48, Te1/0/1..48, Tw1/0/1..48, Fi1/0/1..48
-  const m = normName.match(/^(?:Gi|Te|Tw|Fi)\d+\/0\/(\d+)$/i);
+  // Matches 3-tuple Gi1/0/1..48, Te1/0/1..48, Tw1/0/1..48, Fi1/0/1..48
+  // and 4-tuple StackWise Virtual / C9606R linecard ports like Tw1/2/0/35, Fo1/1/0/12
+  const m = normName.match(/^(?:Gi|Te|Tw|Fi|Fo|Hu)\d+(?:\/\d+)?\/0\/(\d+)$/i);
   if (!m) return null;
   const num = parseInt(m[1], 10);
   return num >= 1 && num <= 48 ? num : null;
@@ -53,7 +54,8 @@ export function parseShowVersion(text = '') {
 
   const modelMatch =
     text.match(/Model [Nn]umber\s*:\s*([A-Za-z0-9-]+)/) ||
-    text.match(/cisco\s+(C9300[A-Za-z0-9-]*)/i);
+    text.match(/cisco\s+(C9[23456]0[0-9A-Za-z-]*)/i) ||
+    text.match(/cisco\s+(WS-C[0-9A-Za-z-]+)/i);
 
   const serialMatch =
     text.match(/System [Ss]erial [Nn]umber\s*:\s*([A-Za-z0-9]+)/) ||
@@ -61,9 +63,9 @@ export function parseShowVersion(text = '') {
 
   const macMatch = text.match(/Base ethernet MAC Address\s*:\s*([0-9A-Fa-f:.]+)/i);
 
-  // Also capture multi-switch stack inventory from "Switch Ports Model" table if present
+  // Also capture multi-switch stack or StackWise Virtual inventory from "Switch Ports Model" table if present
   const stackSwitches = [];
-  const stackRegex = /^\*?\s*(\d+)\s+(\d+)\s+(C9300[^\s]+)\s+([^\s]+)\s+([^\s]+)/gm;
+  const stackRegex = /^\*?\s*(\d+)\s+(\d+)\s+(C9[23456]0[^\s]+)\s+([^\s]+)\s+([^\s]+)/gm;
   let sm;
   while ((sm = stackRegex.exec(text)) !== null) {
     stackSwitches.push({
@@ -476,10 +478,12 @@ export function correlateSwitchShowData(rawInputs = {}) {
     }
   }
 
-  // Determine switch model SKU (supports both 24-port and 48-port C9300 models)
+  // Determine switch model SKU (supports C9606R / C9500 Core as well as 24-port and 48-port C9300 models)
   let detectedModel = 'C9300-48U';
-  if (versionInfo.model && /^C9300/i.test(versionInfo.model)) {
+  if (versionInfo.model && /^(?:C9[23456]0|WS-C)/i.test(versionInfo.model)) {
     detectedModel = versionInfo.model.toUpperCase();
+  } else if (versionInfo.hostname && /9600|9606/i.test(versionInfo.hostname)) {
+    detectedModel = 'C9606R';
   } else if (maxSeenDownlinkPort > 0 && maxSeenDownlinkPort <= 24) {
     detectedModel = hasTeDownlinks ? 'C9300-24UX' : 'C9300-24U';
   } else if (hasTeDownlinks) {
@@ -492,14 +496,38 @@ export function correlateSwitchShowData(rawInputs = {}) {
     detectedModel.includes('XM') ||
     hasTeDownlinks;
 
+  // Also index 4-tuple linecard interfaces (e.g., Tw1/2/0/35, Fo1/1/0/1) by their trailing port number 1..48
+  const fourTupleByPortNum = {};
+  for (const k of [
+    ...Object.keys(statusByIntf),
+    ...Object.keys(cdpByLocalIntf),
+    ...Object.keys(trunksMap),
+    ...Object.keys(runConfigsMap)
+  ]) {
+    const m4 = k.match(/^(?:Gi|Te|Tw|Fi|Fo|Hu)\d+\/\d+\/0\/(\d+)$/i);
+    if (m4) {
+      const pNum = parseInt(m4[1], 10);
+      if (
+        pNum >= 1 &&
+        pNum <= 48 &&
+        (!fourTupleByPortNum[pNum] || cdpByLocalIntf[k] || statusByIntf[k]?.operStatus === 'connected')
+      ) {
+        fourTupleByPortNum[pNum] = k;
+      }
+    }
+  }
+
   // Build normalized Downlink Ports array (24 or 48 ports depending on switch model)
   const ports48 = [];
   for (let i = 1; i <= portCount; i++) {
     const giName = `Gi1/0/${i}`;
     const teName = `Te1/0/${i}`;
     const twName = `Tw1/0/${i}`;
+    const fourTupleName = fourTupleByPortNum[i] || null;
     const intfName =
-      statusByIntf[teName] || runConfigsMap[teName] || cdpByLocalIntf[teName]
+      fourTupleName
+        ? fourTupleName
+        : statusByIntf[teName] || runConfigsMap[teName] || cdpByLocalIntf[teName]
         ? teName
         : statusByIntf[twName] || runConfigsMap[twName] || cdpByLocalIntf[twName]
         ? twName

@@ -45,7 +45,10 @@ export default function TopologyViewer({
   savedDevices = [],
   onSelectSavedDevice,
   onPollNeighbor,
-  onOpenHwDrawer
+  onOpenHwDrawer,
+  selectedBuildingFilter = 'ALL',
+  showUnpolledCdpNeighbors = false,
+  hiddenDeviceKeys = []
 }) {
   // 4-Level Zoom Architecture:
   // 'isometric-blueprint' (Isometric 3D Engineering Blueprint View with full device telemetry capture)
@@ -126,21 +129,44 @@ export default function TopologyViewer({
     });
   }, [portsData, bankFilter, vlanFilter]);
 
-  // Filter Switch Nodes in Level 2 by site & search query, grouped into Tier 1 (Core), Tier 2 (MDF/Distribution), Tier 3 (IDF/Access)
+  const hiddenSet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
+
+  // Filter Switch Nodes in Level 2 by site, building, Polled/CDP scope & search query, grouped into Tier 1 (Core), Tier 2 (MDF/Distribution), Tier 3 (IDF/Access)
   const filteredSwitchNodes = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return (globalGraph.switchNodes || []).filter((n) => {
+      if (hiddenSet.has(n.key) || hiddenSet.has(n.id)) return false;
       if (selectedSiteFilter !== 'ALL' && n.siteCode !== selectedSiteFilter) {
         return false;
+      }
+      if (selectedBuildingFilter !== 'ALL' && n.hierarchyTier !== 1) {
+        if (selectedBuildingFilter === 'CORE') return false;
+        if (n.buildingCode !== selectedBuildingFilter) return false;
+      }
+      // Keep visual switch diagram clean when tcore-9600 has 80+ unpolled CDP neighbors unless user enables showUnpolledCdpNeighbors or filters to a specific building
+      if (!n.isPolled && n.hierarchyTier !== 1) {
+        const isSpecificUnpolledBldg =
+          selectedBuildingFilter !== 'ALL' && selectedBuildingFilter !== 'BAN';
+        if (!showUnpolledCdpNeighbors && !isSpecificUnpolledBldg && !q) {
+          return false;
+        }
       }
       if (!q) return true;
       return (
         n.hostname.toLowerCase().includes(q) ||
         (n.mgmtIp || '').toLowerCase().includes(q) ||
-        (n.model || '').toLowerCase().includes(q)
+        (n.model || '').toLowerCase().includes(q) ||
+        (n.buildingLabel || '').toLowerCase().includes(q)
       );
     });
-  }, [globalGraph.switchNodes, selectedSiteFilter, searchQuery]);
+  }, [
+    globalGraph.switchNodes,
+    selectedSiteFilter,
+    selectedBuildingFilter,
+    showUnpolledCdpNeighbors,
+    hiddenSet,
+    searchQuery
+  ]);
 
   const tier1CoreSwitches = useMemo(
     () => filteredSwitchNodes.filter((n) => n.hierarchyTier === 1),
@@ -155,11 +181,21 @@ export default function TopologyViewer({
     [filteredSwitchNodes]
   );
 
-  // Filter Point-A <-> Point-B links in Level 2 by site, linkTypeFilter, and search query
+  // Filter Point-A <-> Point-B links in Level 2 by site, building, linkTypeFilter, and search query
   const filteredSiteLinks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return globalGraph.links.filter((lnk) => {
+      if (hiddenSet.has(lnk.sourceKey) || hiddenSet.has(lnk.targetKey)) {
+        return false;
+      }
       if (selectedSiteFilter !== 'ALL' && lnk.siteCode !== selectedSiteFilter) {
+        return false;
+      }
+      if (
+        selectedBuildingFilter !== 'ALL' &&
+        lnk.sourceBuildingCode !== selectedBuildingFilter &&
+        lnk.targetBuildingCode !== selectedBuildingFilter
+      ) {
         return false;
       }
       if (linkTypeFilter === 'SWITCHES_ONLY' && !lnk.isSwitchInterconnect) {
@@ -175,7 +211,14 @@ export default function TopologyViewer({
         (lnk.sourceIp || '').toLowerCase().includes(q)
       );
     });
-  }, [globalGraph.links, selectedSiteFilter, linkTypeFilter, searchQuery]);
+  }, [
+    globalGraph.links,
+    selectedSiteFilter,
+    selectedBuildingFilter,
+    linkTypeFilter,
+    hiddenSet,
+    searchQuery
+  ]);
 
   // Links specifically between Tier 1 Core and Tier 2 Distribution
   const coreToMdfLinks = useMemo(() => {

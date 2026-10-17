@@ -49,6 +49,25 @@ export default function App() {
   const [selectedInventoryEntity, setSelectedInventoryEntity] = useState(null);
   const [cameraPreset, setCameraPreset] = useState('isometric');
 
+  // Building & Device Visibility Filtering (prevents 50-150+ CDP neighbors from tcore-9600 overwhelming 3D/2D views)
+  const [selectedBuildingFilter, setSelectedBuildingFilter] = useState('ALL');
+  const [showUnpolledCdpNeighbors, setShowUnpolledCdpNeighbors] = useState(false);
+  const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState([]);
+
+  const handleToggleDeviceHidden = (deviceKey) => {
+    if (!deviceKey) return;
+    setHiddenDeviceKeys((prev) =>
+      prev.includes(deviceKey)
+        ? prev.filter((k) => k !== deviceKey)
+        : [...prev, deviceKey]
+    );
+  };
+
+  const handleShowAllDevices = () => {
+    setHiddenDeviceKeys([]);
+    setSelectedBuildingFilter('ALL');
+  };
+
   // 3D Inspection, Backdrop Brightness, Scale & Disassembly Controls
   const [explodeFactor, setExplodeFactor] = useState(0); // 0.0 to 1.0
   const [backdropBrightness, setBackdropBrightness] = useState(0.68); // 0.0 (Dark) -> 0.68 (Studio Slate) -> 1.0 (Light Showroom)
@@ -300,6 +319,15 @@ export default function App() {
         onOpenHwDrawerForDevice={handleOpenHwDrawerForDevice}
         selectedInventoryEntity={selectedInventoryEntity}
         onSelectInventoryEntity={setSelectedInventoryEntity}
+        selectedBuildingFilter={selectedBuildingFilter}
+        onSelectBuildingFilter={setSelectedBuildingFilter}
+        showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
+        onToggleShowUnpolledCdpNeighbors={() =>
+          setShowUnpolledCdpNeighbors((prev) => !prev)
+        }
+        hiddenDeviceKeys={hiddenDeviceKeys}
+        onToggleDeviceHidden={handleToggleDeviceHidden}
+        onShowAllDevices={handleShowAllDevices}
       />
 
       {/* =========================================================
@@ -325,6 +353,10 @@ export default function App() {
                 onOpenHwDrawer={handleOpenHwDrawerForDevice}
                 onSelectInventoryEntity={setSelectedInventoryEntity}
                 backdropBrightness={backdropBrightness}
+                selectedBuildingFilter={selectedBuildingFilter}
+                onSelectBuildingFilter={setSelectedBuildingFilter}
+                showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
+                hiddenDeviceKeys={hiddenDeviceKeys}
               />
             </div>
           )}
@@ -576,6 +608,9 @@ export default function App() {
                 onSelectSavedDevice={handleSelectSavedDevice}
                 onPollNeighbor={handleOpenLivePoll}
                 onOpenHwDrawer={handleOpenHwDrawerForDevice}
+                selectedBuildingFilter={selectedBuildingFilter}
+                showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
+                hiddenDeviceKeys={hiddenDeviceKeys}
               />
             </div>
           )}

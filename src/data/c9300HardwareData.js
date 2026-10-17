@@ -172,6 +172,23 @@ export const SWITCH_MODELS = {
     weight: '15.88 lb (7.2 kg)',
     switchingCapacity: '256 Gbps (512 Gbps full-duplex)',
     forwardingRate: '190.48 Mpps'
+  },
+  'C9606R': {
+    id: 'C9606R',
+    name: 'Catalyst 9606R 6-Slot Modular Core (StackWise Virtual)',
+    portCount: 48,
+    downlinkDesc: '48x 25G/10G SFP28/SFP+ (C9600-LC-48YL) + 40G/100G QSFP28 Core Linecards',
+    maxPerPortWatts: 0,
+    poeStandard: 'None (Optical Core Fiber Backplane)',
+    defaultPsu: 'PWR-C1-1100WAC-P',
+    defaultPoeBudget: 0,
+    dualPsuPoeBudget: 0,
+    stackingTech: 'StackWise Virtual (SVL Dual-Active Core)',
+    stackPower: false,
+    dimensions: '13.95 × 17.4 × 16.1 in (8RU Modular Core Chassis)',
+    weight: '69.1 lb (31.34 kg)',
+    switchingCapacity: '25.6 Tbps',
+    forwardingRate: '7.8 Bpps'
   }
 };
 
