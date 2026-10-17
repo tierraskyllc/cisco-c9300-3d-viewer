@@ -220,10 +220,11 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
   const presets = useMemo(
     () => ({
       'blueprint-iso': { pos: [-16, 21, 25], target: [0, 0.5, 0] },
+      'campus-wide': { pos: [-24, 38, 46], target: [-16, 0.5, 0] },
       'metro-fabric': { pos: [-9, 13, 18], target: [-6.5, 1.0, 0.5] },
       'switch-trunks': { pos: [-6, 8.5, 13.5], target: [-6.5, 0.6, 3.2] },
       'wifi-fleet': { pos: [9, 12, 16], target: [6.5, 0.8, -1.5] },
-      'top-blueprint': { pos: [0, 34, 0.01], target: [0, 0, 0] },
+      'top-blueprint': { pos: [-10, 52, 0.01], target: [-10, 0, 0] },
       'front-elevation': { pos: [0, 7, 29], target: [0, 1, 0] }
     }),
     []
@@ -676,10 +677,19 @@ function SwitchC9300Node3D({
   labelMode,
   xrayMode = false,
   explodeFactor = 0,
-  showPatchCables = true
+  showPatchCables = true,
+  useCompactMesh = false
 }) {
   const [hovered, setHovered] = useState(false);
-  const accentColor = node.role === 'MDF / Distribution' ? '#38bdf8' : '#10b981';
+  const isMeraki = /MS350|MERAKI/i.test(`${node.model} ${node.hostname}`);
+  const isCorePeer = node.hierarchyTier === 1 || /C9500|C9600|N77/i.test(node.model || '');
+  const accentColor = isCorePeer
+    ? '#f59e0b'
+    : isMeraki
+    ? '#06b6d4'
+    : node.isPolled
+    ? '#10b981'
+    : '#38bdf8';
 
   const visible =
     hovered ||
@@ -690,6 +700,8 @@ function SwitchC9300Node3D({
     labelMode === 'all';
   const showFullDetails =
     hovered || isSelected || isDragging || labelMode === 'all' || labelMode === 'switches';
+
+  const renderFullChassis = !useCompactMesh || hovered || isSelected || isActiveChassis || node.isPolled;
 
   return (
     <group
@@ -724,28 +736,56 @@ function SwitchC9300Node3D({
         <meshStandardMaterial color="#091326" metalness={0.45} roughness={0.55} />
       </mesh>
 
-      {/* Authentic High-Detail 3D Cisco Catalyst 9300 Chassis Assembly (Exact Model from Single 3D Chassis View) */}
-      <group position={[0, MULTI_CHASSIS_Y, 0]}>
-        <CiscoC9300ChassisAssembly
-          portsData={portsData}
-          selectedItem={
-            isSelected || isDragging ? { type: 'component', id: 'chassis-main' } : null
-          }
-          ledMode="STAT"
-          beaconActive={isSelected || hovered || isActiveChassis}
-          switchModelId={node.model || 'C9300-24UX'}
-          networkModuleId="C9300-NM-8X"
-          explodeFactor={explodeFactor}
-          xrayMode={xrayMode}
-          showLabels={false}
-          showPatchCables={showPatchCables}
-          psuStates={{ psu1: 'ok', psu2: 'ok' }}
-          fanFaults={{ fan1: false, fan2: false, fan3: false }}
-          psuModel="PWR-C1-1100WAC-P"
-          chassisScale={MULTI_CHASSIS_SCALE}
-          disablePartClick={true}
-        />
-      </group>
+      {renderFullChassis ? (
+        /* Authentic High-Detail 3D Cisco Catalyst 9300 Chassis Assembly (Exact Model from Single 3D Chassis View) */
+        <group position={[0, MULTI_CHASSIS_Y, 0]}>
+          <CiscoC9300ChassisAssembly
+            portsData={portsData}
+            selectedItem={
+              isSelected || isDragging ? { type: 'component', id: 'chassis-main' } : null
+            }
+            ledMode="STAT"
+            beaconActive={isSelected || hovered || isActiveChassis}
+            switchModelId={node.model || 'C9300-24UX'}
+            networkModuleId="C9300-NM-8X"
+            explodeFactor={explodeFactor}
+            xrayMode={xrayMode}
+            showLabels={false}
+            showPatchCables={showPatchCables}
+            psuStates={{ psu1: 'ok', psu2: 'ok' }}
+            fanFaults={{ fan1: false, fan2: false, fan3: false }}
+            psuModel="PWR-C1-1100WAC-P"
+            chassisScale={MULTI_CHASSIS_SCALE}
+            disablePartClick={true}
+          />
+        </group>
+      ) : (
+        /* High-Speed 3D 1RU Rack Switch Enclosure for 150-Switch Campus View (Upgrades to Full 48-Port Assembly on Hover/Click) */
+        <group position={[0, 0.56, 0]}>
+          <RoundedBox args={[3.48, 0.44, 2.28]} radius={0.05} smoothness={2}>
+            <meshStandardMaterial
+              color={isMeraki ? '#1e293b' : '#334155'}
+              metalness={0.68}
+              roughness={0.32}
+            />
+          </RoundedBox>
+          {/* Front Metallic Port Faceplate Strip */}
+          <mesh position={[-0.35, 0, 1.15]}>
+            <boxGeometry args={[2.35, 0.28, 0.04]} />
+            <meshStandardMaterial color="#0f172a" metalness={0.5} roughness={0.4} />
+          </mesh>
+          {/* Uplink SFP28 Bay Accent */}
+          <mesh position={[1.22, 0, 1.15]}>
+            <boxGeometry args={[0.68, 0.28, 0.04]} />
+            <meshBasicMaterial color={accentColor} />
+          </mesh>
+          {/* Top Building Color Identification Bar */}
+          <mesh position={[0, 0.23, 0]}>
+            <boxGeometry args={[3.1, 0.02, 1.8]} />
+            <meshBasicMaterial color={accentColor} />
+          </mesh>
+        </group>
+      )}
 
       {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time + Direct [HW] Drawer Button) */}
       {visible && (
@@ -1238,14 +1278,14 @@ export default function MultiDevice3DTopologyScene({
     (node) => {
       if (!node) return false;
       if (hiddenSet.has(node.key) || hiddenSet.has(node.id)) return false;
-      if (node.hierarchyTier === 1 || node.buildingCode === 'CORE') {
+      // Keep primary tcore-9600 core anchor visible unless explicitly hidden
+      if (/^tcore-9600/i.test(node.hostname || '')) {
         return true;
       }
       if (selectedBuildingFilter && selectedBuildingFilter !== 'ALL') {
-        if (selectedBuildingFilter === 'CORE') return false;
         if (node.buildingCode !== selectedBuildingFilter) return false;
       }
-      // If unpolled CDP switch, only show in 3D when showUnpolledCdpNeighbors is on OR user specifically filtered to an unpolled building
+      // If unpolled CDP switch, show when showUnpolledCdpNeighbors is on OR user specifically filtered to an unpolled building
       if (!node.isPolled) {
         const isSpecificUnpolledBuilding =
           selectedBuildingFilter &&
@@ -1263,6 +1303,7 @@ export default function MultiDevice3DTopologyScene({
   // Identify live nodes
   const rawCoreNode = useMemo(() => {
     return (
+      globalGraph.switchNodes.find((n) => /^tcore-9600/i.test(n.hostname || '')) ||
       globalGraph.switchNodes.find((n) => n.hierarchyTier === 1) || {
         id: 'TCORE-9600',
         key: 'TCORE-9600',
@@ -1275,24 +1316,7 @@ export default function MultiDevice3DTopologyScene({
         buildingCode: 'CORE',
         isPolled: false,
         hierarchyTier: 1,
-        switchLinks: [
-          {
-            localPort: 'Tw2/2/0/35',
-            remotePort: 'Tw1/1/1',
-            remoteHostname: 'T-BAN-2FL-WL',
-            remoteIp: '132.238.8.58',
-            speed: '25G SFP28',
-            isTrunk: true
-          },
-          {
-            localPort: 'Tw1/2/0/35',
-            remotePort: 'Tw1/1/2',
-            remoteHostname: 'T-BAN-2FL-WL',
-            remoteIp: '132.238.8.58',
-            speed: '25G SFP28',
-            isTrunk: true
-          }
-        ],
+        switchLinks: [],
         attachedEndpoints: []
       }
     );
@@ -1321,25 +1345,32 @@ export default function MultiDevice3DTopologyScene({
     return isSwitchVisibleIn3D(rawWorkStudyNode) ? rawWorkStudyNode : null;
   }, [rawWorkStudyNode, isSwitchVisibleIn3D]);
 
-  // Any additional switches discovered beyond the initial 3 (filtered by Building & Polled/CDP Scope!)
+  // Any additional switches discovered beyond the initial 3 (filtered by Building & Polled/CDP Scope, sorted by Building!)
   const additionalSwitches = useMemo(() => {
     const coreId = rawCoreNode?.id;
     const wlId = rawWlNode?.id;
     const wsId = rawWorkStudyNode?.id;
-    return globalGraph.switchNodes.filter(
-      (n) => n.id !== coreId && n.id !== wlId && n.id !== wsId && isSwitchVisibleIn3D(n)
-    );
+    return globalGraph.switchNodes
+      .filter(
+        (n) => n.id !== coreId && n.id !== wlId && n.id !== wsId && isSwitchVisibleIn3D(n)
+      )
+      .sort((a, b) => {
+        if (a.buildingCode !== b.buildingCode) {
+          return (a.buildingCode || '').localeCompare(b.buildingCode || '');
+        }
+        return (a.hostname || '').localeCompare(b.hostname || '');
+      });
   }, [globalGraph.switchNodes, rawCoreNode, rawWlNode, rawWorkStudyNode, isSwitchVisibleIn3D]);
 
-  // Group all switches by building prefix (ready for tcore / mcore 300+ CDP neighbors)
+  // Group all switches by building code (ready for tcore / mcore 300+ CDP neighbors)
   const buildingClusters = useMemo(() => {
     const map = {};
     for (const sw of globalGraph.switchNodes) {
-      const parts = sw.hostname.split('-');
-      const prefix = parts.length >= 2 ? `${parts[0]}-${parts[1]}` : parts[0];
+      const prefix = sw.buildingCode || 'OTHER';
       if (!map[prefix]) {
         map[prefix] = {
           prefix,
+          label: sw.buildingLabel || prefix,
           switches: [],
           polledCount: 0,
           apCount: 0
@@ -1349,7 +1380,7 @@ export default function MultiDevice3DTopologyScene({
       if (sw.isPolled) map[prefix].polledCount += 1;
       map[prefix].apCount += sw.attachedEndpoints?.length || 0;
     }
-    return Object.values(map);
+    return Object.values(map).sort((a, b) => b.switches.length - a.switches.length);
   }, [globalGraph.switchNodes]);
 
   const attachedAps = useMemo(() => {
@@ -1391,14 +1422,46 @@ export default function MultiDevice3DTopologyScene({
       };
     });
 
+    // Dynamic Campus Switch Matrix for all discovered switches from tcore-9600
+    const count = additionalSwitches.length;
+    const cols = count <= 6 ? 2 : count <= 18 ? 3 : count <= 48 ? 6 : 9;
+    const rows = Math.max(1, Math.ceil(count / cols));
+    const colSpacing = 4.35;
+    const rowSpacing = 3.15;
+    const startX = -14.2;
+    const startZ = -((rows - 1) * rowSpacing) / 2;
+
+    const additionalSwitchPositions = additionalSwitches.map((sw, idx) => {
+      const col = idx % cols;
+      const row = Math.floor(idx / cols);
+      const pos = [
+        +(startX - col * colSpacing).toFixed(2),
+        0.2,
+        +(startZ + row * rowSpacing).toFixed(2)
+      ];
+      return { sw, pos };
+    });
+
+    const campusPad =
+      count > 0
+        ? {
+            cx: +(startX - ((cols - 1) * colSpacing) / 2).toFixed(2),
+            cz: 0,
+            w: +(cols * colSpacing + 3.2).toFixed(2),
+            d: +(rows * rowSpacing + 3.2).toFixed(2)
+          }
+        : null;
+
     return {
       corePos,
       wlPos,
       wsPos,
       apPositions,
-      coloSites
+      coloSites,
+      additionalSwitchPositions,
+      campusPad
     };
-  }, [attachedAps, layout3D]);
+  }, [attachedAps, layout3D, additionalSwitches]);
 
   // Build 3D Conduits Connecting Exact Live Front-Panel Port Coordinates on the Realistic 3D Switches
   const conduits3D = useMemo(() => {
@@ -1467,6 +1530,61 @@ export default function MultiDevice3DTopologyScene({
       });
     }
 
+    // 2b. Live 25G/100G Core Uplinks from tcore-9600 to all visible Campus Building & Core Peer Switches
+    if (coreNode && positions.additionalSwitchPositions.length > 0) {
+      const linksByTargetKey = new Map();
+      for (const lnk of globalGraph.switchLinks || []) {
+        if (lnk.sourceKey === coreNode.key) {
+          if (!linksByTargetKey.has(lnk.targetKey)) linksByTargetKey.set(lnk.targetKey, []);
+          linksByTargetKey.get(lnk.targetKey).push(lnk);
+        } else if (lnk.targetKey === coreNode.key) {
+          if (!linksByTargetKey.has(lnk.sourceKey)) linksByTargetKey.set(lnk.sourceKey, []);
+          linksByTargetKey.get(lnk.sourceKey).push({
+            ...lnk,
+            sourceHostname: lnk.targetHostname,
+            sourcePort: lnk.targetPort,
+            targetHostname: lnk.sourceHostname,
+            targetPort: lnk.sourcePort
+          });
+        }
+      }
+
+      positions.additionalSwitchPositions.forEach(({ sw, pos }, idx) => {
+        const matchedLinks = linksByTargetKey.get(sw.key) || [];
+        const primary = matchedLinks[0];
+        const isMeraki = /MS350|MERAKI/i.test(`${sw.model} ${sw.hostname}`);
+        const isCorePeer = sw.hierarchyTier === 1 || /C9500|C9600|N77/i.test(sw.model || '');
+        const linkColor = isCorePeer ? '#a855f7' : isMeraki ? '#06b6d4' : '#f97316';
+        const srcPort = primary?.sourcePort || 'Tw1/2/0/x';
+        const dstPort = primary?.targetPort || 'Tw1/1/1';
+        const dualSuffix =
+          matchedLinks.length > 1 ? ` (+${matchedLinks.length - 1} Redundant Trunk)` : '';
+
+        list.push({
+          id: `core-to-${sw.id}`,
+          isPrimaryTrunk: false,
+          verified: sw.isPolled,
+          color: linkColor,
+          radius: positions.additionalSwitchPositions.length > 25 ? 0.042 : 0.068,
+          badgeTitle: `[${sw.buildingCode}] ${srcPort} ↔ ${dstPort}${dualSuffix}`,
+          badgeSubtitle: `${coreNode.hostname} ↔ ${sw.hostname} (${sw.model})`,
+          sourceHostname: coreNode.hostname,
+          sourcePort: srcPort,
+          targetHostname: sw.hostname,
+          targetPort: dstPort,
+          speed: /^Hu/i.test(srcPort) ? '100G QSFP28 Fiber' : '25G SFP28 Fiber',
+          nativeVlan: primary?.nativeVlan || '1',
+          allowedVlans: primary?.allowedVlans || 'All Campus VLANs',
+          startPos: [
+            positions.corePos[0] - 1.2,
+            1.15 + ((idx % 5) * 0.14),
+            positions.corePos[2] + (((idx % 7) - 3) * 0.22)
+          ],
+          endPos: [pos[0] + 1.15, 0.56, pos[2] + 0.9]
+        });
+      });
+    }
+
     // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL exact front-panel RJ-45 ports
     if (wlNode) {
       positions.apPositions.forEach(({ ap, pos }, idx) => {
@@ -1517,7 +1635,7 @@ export default function MultiDevice3DTopologyScene({
     }
 
     return list;
-  }, [positions, wlNode, workStudyNode, coreNode]);
+  }, [positions, wlNode, workStudyNode, coreNode, globalGraph.switchLinks]);
 
   // Selected entity in the 3D scene (defaults to T-BAN-2FL-WL so the drawer immediately shows rich telemetry)
   const [selected3DEntity, setSelected3DEntity] = useState(null);
@@ -1564,7 +1682,8 @@ export default function MultiDevice3DTopologyScene({
           </span>
           {[
             { id: 'blueprint-iso', label: 'Isometric 3D' },
-            { id: 'metro-fabric', label: 'Core + Switches' },
+            { id: 'campus-wide', label: `Campus Fabric (${globalGraph.switchNodes.length})` },
+            { id: 'metro-fabric', label: 'Core + Bancroft' },
             { id: 'switch-trunks', label: 'Trunks (A↔B)' },
             { id: 'wifi-fleet', label: 'Wi-Fi 6 APs (7)' },
             { id: 'top-blueprint', label: 'Top Plan (90°)' },
@@ -1755,7 +1874,7 @@ export default function MultiDevice3DTopologyScene({
         >
           <Canvas shadows dpr={[1, 2]}>
             <color attach="background" args={[bgColor]} />
-            <fog attach="fog" args={[bgColor, 38, 72]} />
+            <fog attach="fog" args={[bgColor, 65, 195]} />
 
             <PerspectiveCamera makeDefault position={[-16, 21, 25]} fov={38} />
             <TopologyCameraRig
@@ -1769,7 +1888,7 @@ export default function MultiDevice3DTopologyScene({
               dampingFactor={0.07}
               maxPolarAngle={Math.PI / 2 - 0.03}
               minDistance={4}
-              maxDistance={55}
+              maxDistance={150}
             />
 
             {/* Studio Architectural & Hardware Faceplate Lighting */}
@@ -1801,15 +1920,15 @@ export default function MultiDevice3DTopologyScene({
 
             {/* Blueprint Engineering Floor Grid */}
             <Grid
-              position={[0, -0.18, 0]}
-              args={[48, 48]}
+              position={[-10, -0.18, 0]}
+              args={[120, 120]}
               cellSize={1.5}
               cellThickness={0.6}
               cellColor="#1e3a5f"
               sectionSize={6}
               sectionThickness={1.2}
               sectionColor="#0284c7"
-              fadeDistance={52}
+              fadeDistance={135}
               fadeStrength={1.2}
             />
 
@@ -1904,17 +2023,37 @@ export default function MultiDevice3DTopologyScene({
               />
             )}
 
-            {/* Any additional polled/discovered switches rendered automatically */}
-            {additionalSwitches.slice(0, 12).map((sw, idx) => {
-              const col = idx % 3;
-              const row = Math.floor(idx / 3);
-              const pos = [-13.5 - col * 4.2, 0.2, -3.5 + row * 3.4];
+            {/* ===============================================================
+                ZONE PAD 5: DISCOVERED CAMPUS BUILDINGS & IDF SWITCH MATRIX
+                (All switches discovered via tcore-9600 CDP, grouped by Building)
+               =============================================================== */}
+            {positions.campusPad && (
+              <ZonePlatform3D
+                padId="campusZone"
+                position={[positions.campusPad.cx, 0, positions.campusPad.cz]}
+                size={[positions.campusPad.w, 0.36, positions.campusPad.d]}
+                baseColor="#08162b"
+                rimColor="#38bdf8"
+                title={`ZONE 5 • CAMPUS SWITCH FABRIC (${positions.additionalSwitchPositions.length} SWITCHES CONNECTED TO TCORE-9600)`}
+                subtitle="Filter by Building in Top Bar or Hover/Click Any Switch for Full 48-Port 3D Chassis & Fiber Link"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={false}
+                isParentOfDraggedDevice={false}
+              />
+            )}
+
+            {positions.additionalSwitchPositions.map(({ sw, pos }) => {
+              const useCompact = positions.additionalSwitchPositions.length > 14;
               return (
                 <SwitchC9300Node3D
                   key={sw.id}
                   node={sw}
                   position={pos}
-                  portsData={buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)}
+                  portsData={
+                    useCompact
+                      ? []
+                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                  }
                   isSelected={activeEntity?.id === sw.id}
                   isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
                   onSelect={handleSelectEntity}
@@ -1922,6 +2061,7 @@ export default function MultiDevice3DTopologyScene({
                   labelMode={labelMode}
                   xrayMode={multiXrayMode}
                   explodeFactor={multiExplode}
+                  useCompactMesh={useCompact}
                 />
               );
             })}

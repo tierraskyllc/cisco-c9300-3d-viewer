@@ -284,41 +284,47 @@ export function normalizeHostname(name = '') {
     .toUpperCase();
 }
 
-// Known FDU Building Codes & Friendly Names (automatically supplemented by any <CAMPUS>-<CODE>-* prefix discovered via CDP)
+// // Known FDU Building Codes & Friendly Names (automatically supplemented by any <CAMPUS>-<CODE>-* prefix discovered via CDP)
 export const FDU_BUILDING_DIRECTORY = {
-  CORE: 'Campus Core Backbone (CORE)',
+  CORE: 'Campus Core & Data Center (CORE)',
   BAN: 'Bancroft Hall (BAN)',
-  DICK: 'Dickinson Hall (DICK)',
   DIC: 'Dickinson Hall (DIC)',
-  ROB: 'Robison Hall (ROB)',
-  LIB: 'Giovatto Library (LIB)',
+  DICK: 'Dickinson Hall (DIC)',
+  UCH: 'University Court (UCH)',
+  LCH: 'Linden Court Halls (LCH)',
+  ROB: 'Robison Hall & Annex (ROB)',
+  BEC: 'Becton Hall & Labs (BEC)',
+  ROT: 'Rothman Center & Fieldhouse (ROT)',
   GIO: 'Giovatto Library (GIO)',
+  LIB: 'Giovatto Library (GIO)',
   SUB: 'Student Union Building (SUB)',
-  STU: 'Student Union Building (STU)',
-  BEC: 'Becton Hall (BEC)',
+  SUB7: 'Student Union SUB7 (SUB)',
+  NPT: 'Northpointe Hall (NPT)',
+  KRN: 'Kron Administration (KRN)',
   WIL: 'Williams Hall (WIL)',
   ALU: 'Alumni Hall (ALU)',
-  KRO: 'Kron Building (KRO)',
-  MON: 'Monninger Center (MON)',
-  HEN: 'Hennessy Hall (HEN)',
-  ZEN: 'Zenith Building (ZEN)',
-   MAN: 'Mansion / Hartman Hall (MAN)',
-  GYM: 'Rothman Center / Gym (GYM)',
-  ROTH: 'Rothman Center (ROTH)',
-  SCI: 'Science Building (SCI)',
-  PARK: 'Park Ave Residence (PARK)',
-  LIND: 'Linden Residence (LIND)',
-   NORTH: 'Northpointe Hall (NORTH)',
-  CHIL: 'Chalet / Academic (CHIL)'
+  MUS: 'Muscarelle Center (MUS)',
+  TPL: 'Temple Ave Building (TPL)',
+  UNI: 'University Hall / USAS (UNI)',
+  PSO: 'Public Safety (PSO)',
+  WRG: '10 Woodridge Ave (WRG)',
+  FIT: 'Fitness Center (FIT)',
+  FDH: 'Fordmansion / FDH (FDH)',
+  INT: 'International House (INT)',
+  BBF: 'Baseball Field (BBF)',
+  BOGOTA: 'Bogota / Rothman SB (ROT)'
 };
 
 export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole = '') {
   const norm = normalizeHostname(hostname);
   const bldgHint = String(rawBuildingName || '').trim();
+  const combined = `${norm} ${bldgHint}`.toUpperCase();
 
   if (
     nodeRole === 'core-switch' ||
-    /^TCORE|^FCORE|CORE-9600|C9606/i.test(norm)
+    /^TCORE|^MCORE|^HCORE|^FCORE|CORE-9600|C9606|\bDC1-|\bDC-1-|DATACENTER|\bWLC\b|PRODUCTION-RACK|LABRACK/i.test(
+      combined
+    )
   ) {
     return {
       buildingCode: 'CORE',
@@ -326,26 +332,75 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
     };
   }
 
-  // Match FDU hostname pattern: <CAMPUS_LETTER>-<BUILDING_CODE>-... (e.g. T-BAN-2FL-WL, F-MON-1FL-SW1, V-OAK-2FL)
-  const prefixMatch = norm.match(/^[TFVH]-([A-Z0-9]{2,8})-/i);
+  // Match FDU hostname pattern: <CAMPUS_LETTER>-<BUILDING_CODE>-... or <CAMPUS_LETTER>-<BUILDING_CODE> (e.g. T-BAN-2FL-WL, T-BBF)
+  const prefixMatch = norm.match(/^[TFVH]-([A-Z0-9]{2,8})(?:-|$)/i);
   if (prefixMatch) {
-    const code = prefixMatch[1].toUpperCase();
+    let code = prefixMatch[1].toUpperCase();
+    if (code === 'DICK') code = 'DIC';
+    if (code === 'LIB') code = 'GIO';
+    if (code === 'SUB7') code = 'SUB';
+    if (code === 'BOGOTA') code = 'ROT';
     return {
       buildingCode: code,
       buildingLabel: FDU_BUILDING_DIRECTORY[code] || `${code} Building (${code})`
     };
   }
 
-  // Also check if hostname or buildingName explicitly mentions Bancroft or another known code
-  if (/BANCROFT|\bBAN\b/i.test(`${norm} ${bldgHint}`)) {
-    return {
-      buildingCode: 'BAN',
-      buildingLabel: FDU_BUILDING_DIRECTORY.BAN
-    };
+  // Match real FDU Meraki & Catalyst interface descriptions on tcore-9600
+  if (/BANCROFT|\bBAN\b|\bMIS-MERAKI/i.test(combined)) {
+    return { buildingCode: 'BAN', buildingLabel: FDU_BUILDING_DIRECTORY.BAN };
+  }
+  if (/DHALL|DICKINSON|\bDIC-|\bDIC\b/i.test(combined)) {
+    return { buildingCode: 'DIC', buildingLabel: FDU_BUILDING_DIRECTORY.DIC };
+  }
+  if (/BECTON|\bBEC-|CRIMELAB/i.test(combined)) {
+    return { buildingCode: 'BEC', buildingLabel: FDU_BUILDING_DIRECTORY.BEC };
+  }
+  if (/LINDEN|\bLCH\b/i.test(combined)) {
+    return { buildingCode: 'LCH', buildingLabel: FDU_BUILDING_DIRECTORY.LCH };
+  }
+  if (/UHALL|UCRT|\bUCH\b/i.test(combined)) {
+    return { buildingCode: 'UCH', buildingLabel: FDU_BUILDING_DIRECTORY.UCH };
+  }
+  if (/ROBISON|\bROB-|\bROB\b/i.test(combined)) {
+    return { buildingCode: 'ROB', buildingLabel: FDU_BUILDING_DIRECTORY.ROB };
+  }
+  if (/ROTHMAN|FIELDHOUSE|\bFH-MS350|\bROT\b|\bROTH\b/i.test(combined)) {
+    return { buildingCode: 'ROT', buildingLabel: FDU_BUILDING_DIRECTORY.ROT };
+  }
+  if (/LIBRARY|GIOVATTO|\bLIB1_|\bLIB2|\bGIO\b/i.test(combined)) {
+    return { buildingCode: 'GIO', buildingLabel: FDU_BUILDING_DIRECTORY.GIO };
+  }
+  if (/KRON|\bKRN\b/i.test(combined)) {
+    return { buildingCode: 'KRN', buildingLabel: FDU_BUILDING_DIRECTORY.KRN };
+  }
+  if (/WILLIAMS|\bWIL\b/i.test(combined)) {
+    return { buildingCode: 'WIL', buildingLabel: FDU_BUILDING_DIRECTORY.WIL };
+  }
+  if (/ALUMNI|\bALU\b/i.test(combined)) {
+    return { buildingCode: 'ALU', buildingLabel: FDU_BUILDING_DIRECTORY.ALU };
+  }
+  if (/MUSCARELLE|\bMUS\b/i.test(combined)) {
+    return { buildingCode: 'MUS', buildingLabel: FDU_BUILDING_DIRECTORY.MUS };
+  }
+  if (/PUBSAFETY|\bPSO\b/i.test(combined)) {
+    return { buildingCode: 'PSO', buildingLabel: FDU_BUILDING_DIRECTORY.PSO };
+  }
+  if (/WOODRIDGE|\bWRG\b/i.test(combined)) {
+    return { buildingCode: 'WRG', buildingLabel: FDU_BUILDING_DIRECTORY.WRG };
+  }
+  if (/\bUSAS-|\bUNI\b/i.test(combined)) {
+    return { buildingCode: 'UNI', buildingLabel: FDU_BUILDING_DIRECTORY.UNI };
+  }
+  if (/METRO-SUB|METROSUB|\bSUB\b/i.test(combined)) {
+    return { buildingCode: 'SUB', buildingLabel: FDU_BUILDING_DIRECTORY.SUB };
+  }
+  if (/NORTHPOINTE|\bNPT\b/i.test(combined)) {
+    return { buildingCode: 'NPT', buildingLabel: FDU_BUILDING_DIRECTORY.NPT };
   }
 
   for (const [code, label] of Object.entries(FDU_BUILDING_DIRECTORY)) {
-    if (code !== 'CORE' && new RegExp(`\\b${code}\\b`, 'i').test(`${norm} ${bldgHint}`)) {
+    if (code !== 'CORE' && new RegExp(`\\b${code}\\b`, 'i').test(combined)) {
       return { buildingCode: code, buildingLabel: label };
     }
   }
@@ -362,7 +417,7 @@ export function isWirelessOrEndpoint(platform = '', capabilities = '', hostname 
   const c = String(capabilities).toUpperCase();
   const h = String(hostname).toUpperCase();
   if (
-    /AIR-|C9105|C9115|C9120|C9124|C9130|C9136|C9162|C9164|C9166|CW916|AP1G|PHONE|SEP[0-9A-F]{12}/i.test(
+    /AIR-AP|AIR-CAP|C9105|C9115|C9120|C9124|C9130|C9136|C9162|C9164|C9166|CW916|AP1G|PHONE|SEP[0-9A-F]{12}/i.test(
       `${p} ${h}`
     )
   ) {
@@ -378,7 +433,7 @@ export function isWirelessOrEndpoint(platform = '', capabilities = '', hostname 
 export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '', platform = '') {
   const m = `${mediaType} ${localPort} ${remotePort}`.toUpperCase();
   if (
-    /^(?:TW|FO|HU)\d+\/1\//.test(localPort.toUpperCase()) ||
+    /^(?:TW|FO|HU)\d+\/\d+\//.test(localPort.toUpperCase()) ||
     /^(?:TW|FO|HU)\d+\/\d+\//.test(remotePort.toUpperCase()) ||
     m.includes('25G') ||
     m.includes('40G') ||
@@ -386,7 +441,7 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
   ) {
     return {
       category: 'fiber',
-      label: '25G / 40G Fiber Optic Trunk (SFP28/QSFP+)',
+      label: '25G / 40G / 100G Fiber Optic Trunk (SFP28/QSFP28)',
       shortLabel: '25G Fiber Optic'
     };
   }
@@ -479,7 +534,10 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     const mgmtIp = snap.device?.mgmtIp || dev.mgmt_ip || '—';
     const siteCode = inferSiteCode(hostname, dev.site_name);
     const ports = snap.ports48 || [];
-    const connectedPorts = ports.filter((p) => p.status === 'up').length;
+    const uplinks = snap.uplinkInterfaces || [];
+    const connectedPorts =
+      ports.filter((p) => p.status === 'up').length +
+      uplinks.filter((u) => u.status === 'connected').length;
     const totalPoeWatts = ports.reduce((acc, p) => acc + (p.poeWatts || 0), 0);
 
     const nodeRole =
@@ -508,7 +566,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       isSwitchNode: true,
       nodeRole,
       connectedPorts,
-      totalPorts: ports.length || (model.includes('-24') ? 24 : 48),
+      totalPorts: (ports.length || 48) + uplinks.length,
       totalPoeWatts,
       cdpCount: (snap.cdpNeighbors || []).length,
       trunkCount: (snap.trunks || []).length,
@@ -545,12 +603,30 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     for (const t of snap.trunks || []) {
       trunksByIntf[normalizeInterfaceName(t.interfaceName)] = t;
     }
+    const cfgByIntf = snap.interfaceConfigs || {};
 
     for (const cdp of snap.cdpNeighbors || []) {
       const localPort = normalizeInterfaceName(cdp.localInterface || '');
       const remotePort = normalizeInterfaceName(cdp.remotePort || '');
-      const targetRawHost = cdp.deviceId || 'Unknown-Neighbor';
-      const targetNorm = normalizeHostname(targetRawHost);
+      const rawDeviceId = cdp.deviceId || 'Unknown-Neighbor';
+      const portDesc =
+        cdp.localDescription ||
+        cfgByIntf[localPort]?.description ||
+        portsByIntf[localPort]?.description ||
+        '';
+
+      // If Meraki switch reports a raw 12-hex MAC address as Device ID (e.g. e0cbbc8138e2),
+      // use the parent port's human-readable interface description (e.g. rothman-meraki-mbr2-1.244)
+      const isRawMacId = /^[0-9a-f]{12}$/i.test(rawDeviceId.trim());
+      const cleanDesc = portDesc
+        .replace(/\s+/g, '-')
+        .replace(/[^a-zA-Z0-9._-]/g, '')
+        .slice(0, 32);
+      const targetRawHost =
+        isRawMacId && cleanDesc
+          ? `${cleanDesc} [${rawDeviceId.slice(-4)}]`
+          : rawDeviceId;
+      const targetNorm = normalizeHostname(rawDeviceId);
 
       // Check if target is already a Polled Switch in PostgreSQL (by hostname or IP)
       let targetNode =
@@ -565,14 +641,14 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       const isSwitchOrRouter = !isEndpoint;
 
       if (!targetNode) {
-        const inferredSite = inferSiteCode(targetRawHost, sourceNode.siteCode);
+        const inferredSite = inferSiteCode(`${targetRawHost} ${portDesc}`, sourceNode.siteCode);
         targetNode = nodesByKey.get(targetNorm);
         if (!targetNode) {
           const cleanPlatform = cdp.platform
             ? cdp.platform.replace(/^cisco\s+/i, '').trim()
             : 'CDP Neighbor';
-          const isCoreChassis = /C9600|C9606|C9500|CORE|NEXUS/i.test(
-            `${cleanPlatform} ${targetRawHost}`
+          const isCoreChassis = /C9600|C9606|C9500|N77-|NEXUS|HCORE|MCORE/i.test(
+            `${cleanPlatform} ${targetRawHost} ${portDesc}`
           );
           const targetRole = isCoreChassis
             ? 'core-switch'
@@ -581,13 +657,15 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             : 'endpoint-device';
           const targetBldg = inferBuildingInfo(
             targetRawHost,
-            isEndpoint ? sourceNode.buildingLabel : '',
+            isEndpoint ? sourceNode.buildingLabel : portDesc,
             targetRole
           );
           targetNode = {
             id: targetNorm,
             key: targetNorm,
             hostname: targetRawHost,
+            rawDeviceId,
+            interfaceDescription: portDesc,
             normHost: targetNorm,
             model: cleanPlatform,
             portCount: cleanPlatform.includes('-24') ? 24 : 48,
@@ -603,7 +681,9 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
               targetBldg.buildingCode === 'OTHER' && isEndpoint
                 ? sourceNode.buildingLabel
                 : targetBldg.buildingLabel,
-            buildingName: `Connected via ${sourceHost} (${localPort})`,
+            buildingName: portDesc
+              ? `${portDesc} • via ${sourceHost} (${localPort})`
+              : `Connected via ${sourceHost} (${localPort})`,
             isPolled: false,
             isSwitchNode: isSwitchOrRouter,
             nodeRole: targetRole,

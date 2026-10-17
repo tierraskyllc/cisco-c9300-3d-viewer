@@ -650,7 +650,17 @@ export function correlateSwitchShowData(rawInputs = {}) {
     });
   }
 
-  // Also collect Uplink Ports (Te1/1/1..8, Gi1/1/1..4, Fo1/1/1..2, etc.)
+  // Enrich each CDP neighbor with the local interface description & trunk info from running-config / status
+  for (const n of cdpNeighbors) {
+    if (n.localInterface) {
+      const cfgDesc = runConfigsMap[n.localInterface]?.description || '';
+      const stDesc = statusByIntf[n.localInterface]?.description || '';
+      n.localDescription = cfgDesc || stDesc || '';
+    }
+  }
+
+  // Also collect Uplink Ports (Te1/1/1..8, Gi1/1/1..4, Fo1/1/1..2, plus active 4-tuple C9600 linecard ports)
+  const ports48IntfSet = new Set(ports48.map((p) => p.interfaceName));
   const uplinkInterfaces = [];
   const allSeenIntfs = new Set([
     ...Object.keys(statusByIntf),
@@ -661,15 +671,26 @@ export function correlateSwitchShowData(rawInputs = {}) {
 
   for (const intfName of allSeenIntfs) {
     const upNum = extractUplinkPortNumber(intfName);
-    if (upNum !== null) {
+    const isFourTuple = /^(?:Gi|Te|Tw|Fi|Fo|Hu)\d+\/\d+\/0\/(\d+)$/i.test(intfName);
+    const isActiveFourTuple =
+      isFourTuple &&
+      !ports48IntfSet.has(intfName) &&
+      (Boolean(cdpByLocalIntf[intfName]) ||
+        Boolean(trunksMap[intfName]) ||
+        statusByIntf[intfName]?.operStatus === 'connected');
+
+    if (upNum !== null || isActiveFourTuple) {
+      const fallbackNum = isActiveFourTuple
+        ? parseInt(intfName.match(/(\d+)$/)?.[1] || '1', 10)
+        : upNum;
       uplinkInterfaces.push({
-        portNumber: upNum,
+        portNumber: fallbackNum,
         interfaceName: intfName,
-        status: statusByIntf[intfName]?.operStatus || (trunksMap[intfName] ? 'connected' : 'notconnect'),
+        status: statusByIntf[intfName]?.operStatus || (trunksMap[intfName] || cdpByLocalIntf[intfName] ? 'connected' : 'notconnect'),
         description: runConfigsMap[intfName]?.description || statusByIntf[intfName]?.description || '',
-        runningSpeed: statusByIntf[intfName]?.runningSpeed || '10G',
+        runningSpeed: statusByIntf[intfName]?.runningSpeed || (/^Hu/i.test(intfName) ? '100G' : /^Fo/i.test(intfName) ? '40G' : /^Tw/i.test(intfName) ? '25G' : '10G'),
         configuredSpeed: runConfigsMap[intfName]?.configuredSpeed || statusByIntf[intfName]?.configuredSpeed || 'auto',
-        mediaType: statusByIntf[intfName]?.mediaType || 'SFP-10GBase-SR',
+        mediaType: statusByIntf[intfName]?.mediaType || (/^Hu/i.test(intfName) ? 'QSFP28-100G' : /^Tw/i.test(intfName) ? 'SFP28-25G-SR' : 'SFP-10GBase-SR'),
         isTrunk: Boolean(trunksMap[intfName]) || runConfigsMap[intfName]?.switchportMode === 'trunk',
         trunkDetails: trunksMap[intfName] || null,
         cdpNeighbor: cdpByLocalIntf[intfName] || null,

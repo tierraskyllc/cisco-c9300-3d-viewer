@@ -49,9 +49,9 @@ export default function App() {
   const [selectedInventoryEntity, setSelectedInventoryEntity] = useState(null);
   const [cameraPreset, setCameraPreset] = useState('isometric');
 
-  // Building & Device Visibility Filtering (prevents 50-150+ CDP neighbors from tcore-9600 overwhelming 3D/2D views)
+  // Building & Device Visibility Filtering (defaults to true so all tcore-9600 CDP switches are immediately visible, with 1-click filtering by Building or Polled-only)
   const [selectedBuildingFilter, setSelectedBuildingFilter] = useState('ALL');
-  const [showUnpolledCdpNeighbors, setShowUnpolledCdpNeighbors] = useState(false);
+  const [showUnpolledCdpNeighbors, setShowUnpolledCdpNeighbors] = useState(true);
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState([]);
 
   const handleToggleDeviceHidden = (deviceKey) => {
@@ -322,12 +322,12 @@ export default function App() {
         selectedBuildingFilter={selectedBuildingFilter}
         onSelectBuildingFilter={setSelectedBuildingFilter}
         showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
-        onToggleShowUnpolledCdpNeighbors={() =>
+        onToggleUnpolledCdpNeighbors={() =>
           setShowUnpolledCdpNeighbors((prev) => !prev)
         }
         hiddenDeviceKeys={hiddenDeviceKeys}
-        onToggleDeviceHidden={handleToggleDeviceHidden}
-        onShowAllDevices={handleShowAllDevices}
+        onToggleDeviceVisibility={handleToggleDeviceHidden}
+        onResetDeviceVisibility={handleShowAllDevices}
       />
 
       {/* =========================================================
