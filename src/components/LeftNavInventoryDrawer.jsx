@@ -38,8 +38,10 @@ import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkD
 export default function LeftNavInventoryDrawer({
   isOpen,
   onToggleOpen,
+  onToggle,
   viewMode,
   onChangeViewMode,
+  onSelectViewMode,
   parsedSwitchData,
   savedDevices = [],
   switchModelId,
@@ -47,11 +49,15 @@ export default function LeftNavInventoryDrawer({
   onSelectSavedDevice,
   onOpenLivePoll,
   onOpenUploadModal,
+  onOpenManualUpload,
   isRightInspectorOpen,
   onOpenHwDrawerForDevice,
   selectedInventoryEntity,
   onSelectInventoryEntity
 }) {
+  const handleToggleOpen = onToggleOpen || onToggle;
+  const handleChangeViewMode = onChangeViewMode || onSelectViewMode;
+  const handleOpenUploadModal = onOpenUploadModal || onOpenManualUpload;
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState({
     core: true,
@@ -170,7 +176,7 @@ export default function LeftNavInventoryDrawer({
         {/* Brand & Expand Button */}
         <button
           type="button"
-          onClick={onToggleOpen}
+          onClick={handleToggleOpen}
           className="w-9 h-9 rounded-lg bg-gradient-to-br from-sky-500 to-blue-700 hover:from-sky-400 hover:to-blue-600 flex items-center justify-center shadow-lg shadow-sky-500/20 font-mono font-black text-white text-xs cursor-pointer transition"
           title="Expand Left Navigation & Inventory Drawer"
         >
@@ -187,7 +193,7 @@ export default function LeftNavInventoryDrawer({
             <button
               key={m.id}
               type="button"
-              onClick={() => onChangeViewMode(m.id)}
+              onClick={() => handleChangeViewMode && handleChangeViewMode(m.id)}
               className={`w-9 h-9 rounded-lg flex items-center justify-center transition cursor-pointer ${
                 active
                   ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30'
@@ -219,7 +225,7 @@ export default function LeftNavInventoryDrawer({
 
         <button
           type="button"
-          onClick={onOpenUploadModal}
+          onClick={handleOpenUploadModal}
           className="w-9 h-9 rounded-lg bg-slate-900 hover:bg-slate-800 text-sky-300 border border-sky-500/40 flex items-center justify-center cursor-pointer transition"
           title="Upload Show Commands"
         >
@@ -264,11 +270,12 @@ export default function LeftNavInventoryDrawer({
         </div>
         <button
           type="button"
-          onClick={onToggleOpen}
-          className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer transition shrink-0"
+          onClick={handleToggleOpen}
+          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 flex items-center gap-1 text-[10px] font-mono cursor-pointer transition shrink-0"
           title="Collapse Left Drawer to Slim Rail"
         >
-          <PanelLeftClose className="w-4 h-4" />
+          <PanelLeftClose className="w-3.5 h-3.5 text-sky-400" />
+          <span>◀</span>
         </button>
       </div>
 
@@ -285,7 +292,7 @@ export default function LeftNavInventoryDrawer({
               <button
                 key={mode.id}
                 type="button"
-                onClick={() => onChangeViewMode(mode.id)}
+                onClick={() => handleChangeViewMode && handleChangeViewMode(mode.id)}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                   active
                     ? mode.id === 'multi-3d'
@@ -404,7 +411,7 @@ export default function LeftNavInventoryDrawer({
 
           <button
             type="button"
-            onClick={onOpenUploadModal}
+            onClick={handleOpenUploadModal}
             className="px-2 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-sky-500/40 text-[11px] font-bold text-sky-200 flex items-center justify-center gap-1 cursor-pointer transition"
             title="Upload 7 Cisco IOS-XE Show Commands"
           >

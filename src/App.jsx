@@ -274,16 +274,16 @@ export default function App() {
          ========================================================= */}
       <LeftNavInventoryDrawer
         isOpen={isLeftNavOpen}
-        onToggle={() => setIsLeftNavOpen(!isLeftNavOpen)}
+        onToggleOpen={() => setIsLeftNavOpen((prev) => !prev)}
         viewMode={viewMode}
-        onSelectViewMode={handleViewModeChange}
+        onChangeViewMode={handleViewModeChange}
         parsedSwitchData={parsedSwitchData}
         savedDevices={savedDevices}
         onSelectSavedDevice={handleSelectSavedDevice}
         switchModelId={switchModelId}
         onModelChange={handleModelChange}
         onOpenLivePoll={handleOpenLivePoll}
-        onOpenManualUpload={() => {
+        onOpenUploadModal={() => {
           setUploaderMode('manual');
           setIsUploaderOpen(true);
         }}
