@@ -31,6 +31,7 @@ import {
   BACKBONE_CIRCUITS,
   buildGlobalAndSiteTopology
 } from '../data/globalNetworkData';
+import IsometricBlueprintView from './IsometricBlueprintView';
 
 export default function TopologyViewer({
   portsData,
@@ -45,11 +46,12 @@ export default function TopologyViewer({
   onSelectSavedDevice,
   onPollNeighbor
 }) {
-  // 3-Level Zoom Architecture:
-  // 'switch-ports' (Level 3: Active Switch Ports & Faceplate)
-  // 'site-links'   (Level 2: Visual Multi-Switch Interconnect Diagram + Point-A <-> Point-B Table)
-  // 'global-wan'   (Level 1: US & Canada Campuses, Colocations & ISPs)
-  const [topologyLevel, setTopologyLevel] = useState('site-links');
+  // 4-Level Zoom Architecture:
+  // 'isometric-blueprint' (Isometric 3D Engineering Blueprint View with full device telemetry capture)
+  // 'switch-ports'        (Level 3: Active Switch Ports & Faceplate)
+  // 'site-links'          (Level 2: Visual Multi-Switch Interconnect Diagram + Point-A <-> Point-B Table)
+  // 'global-wan'          (Level 1: US & Canada Campuses, Colocations & ISPs)
+  const [topologyLevel, setTopologyLevel] = useState('isometric-blueprint');
   const [selectedSiteFilter, setSelectedSiteFilter] = useState('ALL');
   const [linkTypeFilter, setLinkTypeFilter] = useState('SWITCHES_ONLY'); // 'SWITCHES_ONLY' | 'ALL_LINKS'
   const [expandedApSwitches, setExpandedApSwitches] = useState({ 'T-BAN-2FL-WL': true });
@@ -480,6 +482,18 @@ export default function TopologyViewer({
           <div className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800 mr-2">
             <button
               type="button"
+              onClick={() => setTopologyLevel('isometric-blueprint')}
+              className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                topologyLevel === 'isometric-blueprint'
+                  ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Box className="w-3.5 h-3.5" />
+              ✨ Isometric 3D Blueprint
+            </button>
+            <button
+              type="button"
               onClick={() => setTopologyLevel('global-wan')}
               className={`px-2.5 py-1 rounded-md text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer ${
                 topologyLevel === 'global-wan'
@@ -614,6 +628,24 @@ export default function TopologyViewer({
           </div>
         )}
       </div>
+
+      {/* ===================================================================
+          LEVEL 0: ISOMETRIC 3D ENGINEERING BLUEPRINT VIEW
+          (Architectural Isometric Blueprint + Complete Device Telemetry Capture)
+         =================================================================== */}
+      {topologyLevel === 'isometric-blueprint' && (
+        <IsometricBlueprintView
+          globalGraph={globalGraph}
+          savedDevices={savedDevices}
+          activeSwitchHostname={devInfo?.hostname}
+          onSelectSavedDevice={(serialNumber) => {
+            if (onSelectSavedDevice) {
+              onSelectSavedDevice(serialNumber);
+            }
+          }}
+          onPollNeighbor={onPollNeighbor}
+        />
+      )}
 
       {/* ===================================================================
           LEVEL 1: GLOBAL MULTI-CAMPUS, COLOCATION & ISP WAN ARCHITECTURE
