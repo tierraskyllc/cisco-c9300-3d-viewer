@@ -2,7 +2,6 @@ import React, { useState, useMemo } from 'react';
 import {
   Sparkles,
   Box,
-  Columns,
   Network,
   Wifi,
   Upload,
@@ -27,7 +26,7 @@ import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkD
 /**
  * Left-Hand Collapsible Navigation & Categorized Network Inventory Drawer
  * Houses:
- * 1) Primary View Mode Switcher (Multi-Device 3D | Single 3D Chassis | Split View | 2D Blueprint & Tables)
+ * 1) Primary View Mode Switcher (Multi-Device 3D | Single 3D Chassis | 2D Blueprint & Tables)
  * 2) Contextual Selected Device Card (Appears when a device is clicked in the 3D/2D view or selected in Inventory):
  *    - Saved SQL Device Switcher Dropdown
  *    - Hardware Model SKU Dropdown (24-Port / 48-Port)
@@ -164,7 +163,6 @@ export default function LeftNavInventoryDrawer({
   const navModes = [
     { id: 'multi-3d', label: 'Multi-Device 3D', short: '3D Scene', icon: Sparkles },
     { id: '3d', label: 'Single 3D Chassis', short: 'Chassis', icon: Box },
-    { id: 'split', label: 'Split View', short: 'Split', icon: Columns },
     { id: 'topology', label: '2D Blueprint & Tables', short: 'Blueprint', icon: Network }
   ];
 
@@ -186,7 +184,7 @@ export default function LeftNavInventoryDrawer({
 
         <div className="w-8 h-[1px] bg-slate-800 my-0.5" />
 
-        {/* 4 View Mode Icons */}
+        {/* 3 View Mode Icons */}
         {navModes.map((m) => {
           const Icon = m.icon;
           const active = viewMode === m.id;
@@ -302,7 +300,9 @@ export default function LeftNavInventoryDrawer({
                 key={mode.id}
                 type="button"
                 onClick={() => handleChangeViewMode && handleChangeViewMode(mode.id)}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
+                  mode.id === 'multi-3d' ? 'col-span-2' : ''
+                } ${
                   active
                     ? mode.id === 'multi-3d'
                       ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow'

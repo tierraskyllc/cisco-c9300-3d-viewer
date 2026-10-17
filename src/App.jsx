@@ -43,7 +43,7 @@ export default function App() {
   // Core Switch Configuration & Navigation Drawer State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
   const [networkModuleId, setNetworkModuleId] = useState('C9300-NM-8X');
-  const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | '3d' | 'split' | 'topology'
+  const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | '3d' | 'topology'
   const [isLeftNavOpen, setIsLeftNavOpen] = useState(true);
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false);
   const [selectedInventoryEntity, setSelectedInventoryEntity] = useState(null);
@@ -330,9 +330,9 @@ export default function App() {
           )}
 
           {/* =====================================================
-              SINGLE-CHASSIS 3D VIEWPORT CONTROLS BAR (Shown in '3d' & 'split' modes)
+              SINGLE-CHASSIS 3D VIEWPORT CONTROLS BAR (Shown in '3d' mode)
              ===================================================== */}
-          {(viewMode === '3d' || viewMode === 'split') && (
+          {viewMode === '3d' && (
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-slate-900/75 border border-slate-800/90 rounded-xl shrink-0">
               {/* Camera Angle Quick-Jump Buttons */}
               <div className="flex flex-wrap items-center gap-1">
@@ -515,8 +515,8 @@ export default function App() {
           )}
 
           {/* Single 3D Switch Viewport */}
-          {(viewMode === '3d' || viewMode === 'split') && (
-            <div className={viewMode === 'split' ? 'h-[48%] min-h-[260px]' : 'flex-1 min-h-0'}>
+          {viewMode === '3d' && (
+            <div className="flex-1 min-h-0">
               <CiscoChassis3D
                 portsData={currentPorts}
                 selectedItem={selectedItem}
@@ -546,8 +546,8 @@ export default function App() {
             </div>
           )}
 
-          {/* Linked Network Topology Viewer (Shown in 'split' and 'topology' modes) */}
-          {(viewMode === 'topology' || viewMode === 'split') && (
+          {/* Linked Network Topology Viewer (Shown in 'topology' mode) */}
+          {viewMode === 'topology' && (
             <div className="flex-1 min-h-0">
               <TopologyViewer
                 portsData={currentPorts}
