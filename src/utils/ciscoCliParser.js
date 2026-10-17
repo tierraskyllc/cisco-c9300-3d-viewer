@@ -404,12 +404,14 @@ export function parseShowVlan(text = '') {
   return vlans;
 }
 
-// MASTER CORRELATOR: Combines all 7 show commands into a complete switch & 48-port + uplink state
+// MASTER CORRELATOR: Combines all 7 show commands into a complete switch & 24/48-port + uplink state
 export function correlateSwitchShowData(rawInputs = {}) {
+  const cdpText =
+    rawInputs.showCdpNeighbors || rawInputs.showCdpNeighborDetail || '';
   const combined = [
     rawInputs.combinedText || '',
     rawInputs.showVersion || '',
-    rawInputs.showCdpNeighborDetail || '',
+    cdpText,
     rawInputs.showIntTrunk || '',
     rawInputs.showIpIntBrief || '',
     rawInputs.showIntStatus || '',
@@ -419,9 +421,7 @@ export function correlateSwitchShowData(rawInputs = {}) {
 
   const versionInfo =
     parseShowVersion(rawInputs.showVersion || combined) || {};
-  const cdpNeighbors = parseShowCdpNeighborsDetail(
-    rawInputs.showCdpNeighborDetail || combined
-  );
+  const cdpNeighbors = parseShowCdpNeighborsDetail(cdpText || combined);
   const trunksMap = parseShowInterfacesTrunk(
     rawInputs.showIntTrunk || combined
   );

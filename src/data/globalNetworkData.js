@@ -1,7 +1,10 @@
 // Global Multi-Campus, Colocation (Halsey165 / Hastings), ISP & Switch-to-Switch Link Reconciler
 // Supports ~3,000 devices across 3 Campuses (Metro, Florham, VancOakridge) and 2 Colocations (Halsey165, Hastings)
 
-import { normalizeInterfaceName } from '../utils/ciscoCliParser.js';
+import {
+  normalizeInterfaceName,
+  correlateSwitchShowData
+} from '../utils/ciscoCliParser.js';
 
 export const GLOBAL_SITES = [
   {
@@ -328,10 +331,26 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
  * - siteSummary / siteStats: Per-site counts for Metro, Florham, Halsey165, VancOakridge, Hastings
  */
 export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch = null) {
-  const allDevices = [...savedDevices];
+  const hasRealDevice = savedDevices.some(
+    (d) => d.serial_number && d.serial_number !== 'FOC2534L9K1'
+  );
+  const allDevices = savedDevices
+    .filter((d) => !hasRealDevice || d.serial_number !== 'FOC2534L9K1')
+    .map((d) => {
+      if (d.raw_outputs && Object.keys(d.raw_outputs).length > 0) {
+        return {
+          ...d,
+          parsed_snapshot: correlateSwitchShowData(d.raw_outputs)
+        };
+      }
+      return d;
+    });
 
   // Ensure activeParsedSwitch is represented even if running in offline preview mode
-  if (activeParsedSwitch?.device?.serialNumber) {
+  if (
+    activeParsedSwitch?.device?.serialNumber &&
+    (!hasRealDevice || activeParsedSwitch.device.serialNumber !== 'FOC2534L9K1')
+  ) {
     const exists = allDevices.some(
       (d) => d.serial_number === activeParsedSwitch.device.serialNumber
     );
