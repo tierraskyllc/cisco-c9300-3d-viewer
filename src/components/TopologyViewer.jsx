@@ -19,7 +19,11 @@ import {
   CheckCircle2,
   Search,
   ArrowLeftRight,
-  ExternalLink
+  ArrowUpDown,
+  ExternalLink,
+  ChevronDown,
+  ChevronUp,
+  Box
 } from 'lucide-react';
 import {
   GLOBAL_SITES,
@@ -43,10 +47,12 @@ export default function TopologyViewer({
 }) {
   // 3-Level Zoom Architecture:
   // 'switch-ports' (Level 3: Active Switch Ports & Faceplate)
-  // 'site-links'   (Level 2: Point-A <-> Point-B Switch Interconnects)
+  // 'site-links'   (Level 2: Visual Multi-Switch Interconnect Diagram + Point-A <-> Point-B Table)
   // 'global-wan'   (Level 1: US & Canada Campuses, Colocations & ISPs)
-  const [topologyLevel, setTopologyLevel] = useState('switch-ports');
+  const [topologyLevel, setTopologyLevel] = useState('site-links');
   const [selectedSiteFilter, setSelectedSiteFilter] = useState('ALL');
+  const [linkTypeFilter, setLinkTypeFilter] = useState('SWITCHES_ONLY'); // 'SWITCHES_ONLY' | 'ALL_LINKS'
+  const [expandedApSwitches, setExpandedApSwitches] = useState({ 'T-BAN-2FL-WL': true });
   const [searchQuery, setSearchQuery] = useState('');
 
   const [bankFilter, setBankFilter] = useState('ALL'); // 'ALL' | 1 | 2 | 3 | 4 | 'CONNECTED' | 'ISSUES'
@@ -117,11 +123,43 @@ export default function TopologyViewer({
     });
   }, [portsData, bankFilter, vlanFilter]);
 
-  // Filter Point-A <-> Point-B links & nodes in Level 2 by site & search query
+  // Filter Switch Nodes in Level 2 by site & search query, grouped into Tier 1 (Core), Tier 2 (MDF/Distribution), Tier 3 (IDF/Access)
+  const filteredSwitchNodes = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return (globalGraph.switchNodes || []).filter((n) => {
+      if (selectedSiteFilter !== 'ALL' && n.siteCode !== selectedSiteFilter) {
+        return false;
+      }
+      if (!q) return true;
+      return (
+        n.hostname.toLowerCase().includes(q) ||
+        (n.mgmtIp || '').toLowerCase().includes(q) ||
+        (n.model || '').toLowerCase().includes(q)
+      );
+    });
+  }, [globalGraph.switchNodes, selectedSiteFilter, searchQuery]);
+
+  const tier1CoreSwitches = useMemo(
+    () => filteredSwitchNodes.filter((n) => n.hierarchyTier === 1),
+    [filteredSwitchNodes]
+  );
+  const tier2MdfSwitches = useMemo(
+    () => filteredSwitchNodes.filter((n) => n.hierarchyTier === 2),
+    [filteredSwitchNodes]
+  );
+  const tier3IdfSwitches = useMemo(
+    () => filteredSwitchNodes.filter((n) => n.hierarchyTier === 3),
+    [filteredSwitchNodes]
+  );
+
+  // Filter Point-A <-> Point-B links in Level 2 by site, linkTypeFilter, and search query
   const filteredSiteLinks = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
     return globalGraph.links.filter((lnk) => {
       if (selectedSiteFilter !== 'ALL' && lnk.siteCode !== selectedSiteFilter) {
+        return false;
+      }
+      if (linkTypeFilter === 'SWITCHES_ONLY' && !lnk.isSwitchInterconnect) {
         return false;
       }
       if (!q) return true;
@@ -134,22 +172,36 @@ export default function TopologyViewer({
         (lnk.sourceIp || '').toLowerCase().includes(q)
       );
     });
-  }, [globalGraph.links, selectedSiteFilter, searchQuery]);
+  }, [globalGraph.links, selectedSiteFilter, linkTypeFilter, searchQuery]);
 
-  const filteredSiteNodes = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    return globalGraph.nodes.filter((n) => {
-      if (selectedSiteFilter !== 'ALL' && n.siteCode !== selectedSiteFilter) {
-        return false;
-      }
-      if (!q) return true;
-      return (
-        n.hostname.toLowerCase().includes(q) ||
-        (n.mgmtIp || '').toLowerCase().includes(q) ||
-        (n.model || '').toLowerCase().includes(q)
-      );
-    });
-  }, [globalGraph.nodes, selectedSiteFilter, searchQuery]);
+  // Links specifically between Tier 1 Core and Tier 2 Distribution
+  const coreToMdfLinks = useMemo(() => {
+    const t1Keys = new Set(tier1CoreSwitches.map((s) => s.key));
+    const t2Keys = new Set(tier2MdfSwitches.map((s) => s.key));
+    return (globalGraph.switchLinks || []).filter(
+      (l) =>
+        (t1Keys.has(l.sourceKey) && t2Keys.has(l.targetKey)) ||
+        (t2Keys.has(l.sourceKey) && t1Keys.has(l.targetKey))
+    );
+  }, [globalGraph.switchLinks, tier1CoreSwitches, tier2MdfSwitches]);
+
+  // Links specifically between Tier 2 Distribution and Tier 3 Access/IDF
+  const mdfToIdfLinks = useMemo(() => {
+    const t2Keys = new Set(tier2MdfSwitches.map((s) => s.key));
+    const t3Keys = new Set(tier3IdfSwitches.map((s) => s.key));
+    return (globalGraph.switchLinks || []).filter(
+      (l) =>
+        (t2Keys.has(l.sourceKey) && t3Keys.has(l.targetKey)) ||
+        (t3Keys.has(l.sourceKey) && t2Keys.has(l.targetKey))
+    );
+  }, [globalGraph.switchLinks, tier2MdfSwitches, tier3IdfSwitches]);
+
+  const toggleApDrawer = (nodeKey) => {
+    setExpandedApSwitches((prev) => ({
+      ...prev,
+      [nodeKey]: !prev[nodeKey]
+    }));
+  };
 
   const getDeviceIcon = (type) => {
     switch (type) {
@@ -215,6 +267,208 @@ export default function TopologyViewer({
     );
   };
 
+  // Renders a visual switch card inside the Multi-Switch Hierarchy Diagram
+  const renderVisualSwitchNode = (node) => {
+    const isActiveIn3D =
+      node.isPolled &&
+      devInfo?.serialNumber &&
+      node.serialNumber === devInfo.serialNumber;
+    const hasAps = (node.attachedEndpoints || []).length > 0;
+    const isApExpanded = Boolean(expandedApSwitches[node.key]);
+
+    // Find all switch-to-switch links connected to this node
+    const connectedSwitchLinks = (globalGraph.switchLinks || []).filter(
+      (l) => l.sourceKey === node.key || l.targetKey === node.key
+    );
+
+    return (
+      <div
+        key={node.key}
+        className={`p-3.5 rounded-xl border transition flex flex-col justify-between gap-2.5 ${
+          isActiveIn3D
+            ? 'bg-sky-950/50 border-sky-400 ring-2 ring-sky-400/50 shadow-xl shadow-sky-500/10'
+            : node.isPolled
+            ? 'bg-slate-900/90 border-emerald-500/50 hover:border-emerald-400'
+            : 'bg-slate-950/85 border-purple-500/50 border-dashed hover:border-purple-400'
+        }`}
+      >
+        {/* Top Header Badge Row */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
+                node.hierarchyTier === 1
+                  ? 'bg-purple-500/25 text-purple-200 border border-purple-400/40'
+                  : node.isPolled
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+              }`}
+            >
+              {node.tierLabel}
+            </span>
+            <span className="px-1.5 py-0.5 rounded bg-slate-800 text-sky-300 text-[10px] font-mono">
+              {node.siteCode}
+            </span>
+            {isActiveIn3D && (
+              <span className="px-2 py-0.5 rounded bg-sky-500 text-slate-950 text-[10px] font-mono font-bold">
+                ACTIVE IN 3D VIEW
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            {node.totalPoeWatts > 0 && (
+              <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30 text-[10px] font-mono">
+                ⚡ {node.totalPoeWatts.toFixed(1)}W PoE
+              </span>
+            )}
+            {node.isPolled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (onSelectSavedDevice && node.serialNumber !== 'UNPOLLED') {
+                    onSelectSavedDevice(node.serialNumber);
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold flex items-center gap-1 cursor-pointer transition ${
+                  isActiveIn3D
+                    ? 'bg-sky-500/25 text-sky-200 border border-sky-400'
+                    : 'bg-sky-500 hover:bg-sky-400 text-slate-950 shadow'
+                }`}
+                title="Load this switch into the 3D Hardware Chassis & Port Inspector"
+              >
+                <Box className="w-3 h-3" />
+                {isActiveIn3D ? 'Viewing in 3D' : 'Load in 3D View'}
+              </button>
+            ) : (
+              node.mgmtIp &&
+              node.mgmtIp !== '—' &&
+              onPollNeighbor && (
+                <button
+                  type="button"
+                  onClick={() => onPollNeighbor(node.mgmtIp, node.hostname)}
+                  className="px-2.5 py-1 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-slate-950 text-[11px] font-mono font-bold flex items-center gap-1 shadow cursor-pointer"
+                  title={`Poll ${node.hostname} (${node.mgmtIp}) via SSH`}
+                >
+                  <Terminal className="w-3 h-3" /> Poll SSH
+                </button>
+              )
+            )}
+          </div>
+        </div>
+
+        {/* Switch Identity & Hardware Info */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div
+              className={`p-2.5 rounded-xl border ${
+                node.hierarchyTier === 1
+                  ? 'bg-purple-500/20 border-purple-400/40 text-purple-300'
+                  : 'bg-sky-500/20 border-sky-400/40 text-sky-300'
+              }`}
+            >
+              <Server className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-sm font-bold text-white truncate">
+                {node.hostname}
+              </div>
+              <div className="text-xs font-mono text-slate-300">
+                Model: <span className="text-sky-300 font-bold">{node.model}</span> • Mgmt IP:{' '}
+                <span className="text-emerald-300 font-bold">{node.mgmtIp}</span>
+                {node.serialNumber !== 'UNPOLLED' && (
+                  <span className="text-slate-400"> • S/N: {node.serialNumber}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Physical Switch-to-Switch Port Connections Summary Pill */}
+        {connectedSwitchLinks.length > 0 && (
+          <div className="space-y-1 pt-1 border-t border-slate-800/80">
+            <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400">
+              Inter-Switch Physical Trunk Interfaces ({connectedSwitchLinks.length}):
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {connectedSwitchLinks.map((lnk) => {
+                const isSource = lnk.sourceKey === node.key;
+                const myPort = isSource ? lnk.sourcePort : lnk.targetPort;
+                const peerHost = isSource ? lnk.targetHostname : lnk.sourceHostname;
+                const peerPort = isSource ? lnk.targetPort : lnk.sourcePort;
+                return (
+                  <div
+                    key={lnk.id}
+                    className={`px-2 py-1 rounded-md text-[11px] font-mono border flex items-center gap-1.5 ${
+                      lnk.verifiedBiDirectional
+                        ? 'bg-emerald-950/50 border-emerald-500/50 text-emerald-200'
+                        : 'bg-slate-950 border-slate-700 text-slate-200'
+                    }`}
+                  >
+                    <span className="font-bold text-sky-300">[{myPort}]</span>
+                    <span className="text-slate-400">↔</span>
+                    <span className="font-bold text-indigo-300">[{peerPort}]</span>
+                    <span className="text-white">{peerHost}</span>
+                    {lnk.verifiedBiDirectional && (
+                      <CheckCircle2 className="w-3 h-3 text-emerald-400 shrink-0" />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Attached Wireless APs / Endpoints Drawer (if any) */}
+        {hasAps && (
+          <div className="pt-1 border-t border-slate-800/80">
+            <button
+              type="button"
+              onClick={() => toggleApDrawer(node.key)}
+              className="w-full flex items-center justify-between text-xs font-mono text-amber-300 hover:text-amber-200 py-1 cursor-pointer"
+            >
+              <span className="flex items-center gap-1.5">
+                <Wifi className="w-3.5 h-3.5" />
+                {node.attachedEndpoints.length} Connected Wireless APs / Endpoints (
+                {node.totalPoeWatts.toFixed(1)}W PoE)
+              </span>
+              {isApExpanded ? (
+                <ChevronUp className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronDown className="w-3.5 h-3.5" />
+              )}
+            </button>
+
+            {isApExpanded && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1.5">
+                {node.attachedEndpoints.map((ep, idx) => (
+                  <div
+                    key={`${ep.localPort}-${idx}`}
+                    className="p-1.5 rounded bg-slate-950/90 border border-slate-800 flex items-center justify-between text-[11px] font-mono"
+                  >
+                    <div className="truncate">
+                      <span className="text-sky-400 font-bold">{ep.localPort}</span> →{' '}
+                      <span className="text-white font-semibold">{ep.hostname}</span>
+                      <span className="text-slate-400 ml-1">({ep.model})</span>
+                    </div>
+                    <div className="shrink-0 flex items-center gap-1.5 ml-2">
+                      <span className="text-emerald-300">{ep.ip}</span>
+                      {ep.poeWatts > 0 && (
+                        <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 text-[10px]">
+                          {ep.poeWatts.toFixed(1)}W
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="w-full h-full flex flex-col bg-[#080d1a] rounded-xl border border-slate-800/90 overflow-hidden shadow-2xl">
       {/* ===================================================================
@@ -246,10 +500,7 @@ export default function TopologyViewer({
               }`}
             >
               <GitCompareArrows className="w-3.5 h-3.5" />
-              2. Switch Interconnects (Point A ↔ B)
-              <span className="px-1.5 py-0.2 rounded-full bg-black/30 text-[10px] font-mono">
-                {globalGraph.links.length}
-              </span>
+              2. Multi-Switch Interconnect Map ({(globalGraph.switchNodes || []).length} Switches)
             </button>
             <button
               type="button"
@@ -297,10 +548,12 @@ export default function TopologyViewer({
                     : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                 }`}
               >
-                All Sites ({globalGraph.nodes.length})
+                All Sites ({(globalGraph.switchNodes || []).length} Switches)
               </button>
               {GLOBAL_SITES.map((s) => {
-                const count = globalGraph.siteSummary[s.code]?.totalNodes || 0;
+                const count =
+                  (globalGraph.siteSummary[s.code]?.polledCount || 0) +
+                  (globalGraph.siteSummary[s.code]?.unpolledSwitchCount || 0);
                 return (
                   <button
                     key={s.code}
@@ -355,8 +608,8 @@ export default function TopologyViewer({
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Search switch, IP, or port (e.g. Te1/0/24)..."
-              className="bg-transparent text-xs font-mono text-white focus:outline-none w-52"
+              placeholder="Search switch, IP, or port..."
+              className="bg-transparent text-xs font-mono text-white focus:outline-none w-48"
             />
           </div>
         )}
@@ -376,18 +629,18 @@ export default function TopologyViewer({
                 FDU Multi-Country Enterprise Network Architecture (~3,000 Devices • 3 Campuses • 2 Colocations • Dual-Country ISPs)
               </h3>
               <p className="text-xs text-slate-400">
-                Click any Campus or Colocation below to inspect its live switches, discovered CDP neighbors, and Point-A ↔ Point-B physical links.
+                Click any Campus or Colocation below to inspect its live interconnected switches, discovered CDP neighbors, and Point-A ↔ Point-B links.
               </p>
             </div>
             <div className="flex items-center gap-3 text-xs font-mono">
               <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                Polled Switches: {savedDevices.length || 1}
+                Polled Switches: {globalGraph.nodes.filter((n) => n.isPolled).length}
+              </span>
+              <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                Discovered Switches: {globalGraph.switchNodes.filter((n) => !n.isPolled).length}
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                Discovered Neighbors: {globalGraph.nodes.filter((n) => !n.isPolled).length}
-              </span>
-              <span className="px-2.5 py-1 rounded-lg bg-sky-500/15 text-sky-300 border border-sky-500/30">
-                Point-A ↔ Point-B Links: {globalGraph.links.length}
+                Connected APs: {globalGraph.nodes.filter((n) => !n.isSwitchNode).length}
               </span>
             </div>
           </div>
@@ -498,11 +751,11 @@ export default function TopologyViewer({
                         <span className="text-emerald-300 font-bold">
                           {stats.polledCount || 0} Polled Switches
                         </span>
-                        <span className="text-amber-300">
-                          {stats.neighborCount || 0} CDP Neighbors
+                        <span className="text-purple-300">
+                          {stats.unpolledSwitchCount || 0} Core/Peer
                         </span>
-                        <span className="text-sky-300 flex items-center gap-0.5">
-                          {stats.linkCount || 0} Links <ExternalLink className="w-3 h-3" />
+                        <span className="text-amber-300 flex items-center gap-0.5">
+                          {stats.endpointCount || 0} APs <ExternalLink className="w-3 h-3 ml-0.5" />
                         </span>
                       </div>
                     </div>
@@ -646,47 +899,168 @@ export default function TopologyViewer({
       )}
 
       {/* ===================================================================
-          LEVEL 2: SITE SWITCH-TO-SWITCH POINT-A <-> POINT-B INTERCONNECTS
-          (Displays every Polled Switch, Discovered CDP Neighbor, and exact
-           Point-A [Port A] <---> [Port B] Point-B physical interface link)
+          LEVEL 2: VISUAL MULTI-SWITCH HIERARCHY DIAGRAM + POINT-A <-> POINT-B
+          (Shows all switches interconnected from Core -> MDF -> IDF + APs)
          =================================================================== */}
       {topologyLevel === 'site-links' && (
-        <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {/* Header Banner */}
-          <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/75 border border-slate-800 rounded-xl p-3">
-            <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <GitCompareArrows className="w-4 h-4 text-emerald-400" />
-                Point-A ↔ Point-B Switch-to-Switch Physical Interconnects (
-                {selectedSiteFilter === 'ALL' ? 'All Campuses & Colocations' : selectedSiteFilter})
-              </h3>
-              <p className="text-xs text-slate-400">
-                Direct switch-to-switch & neighbor physical links correlated from{' '}
-                <code className="text-sky-300">show cdp nei detail</code>,{' '}
-                <code className="text-sky-300">show int trunk</code>, and{' '}
-                <code className="text-sky-300">show interface status</code> (bypassing passive patch panels).
-              </p>
+        <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* SECTION 1: VISUAL INTERCONNECTED MULTI-SWITCH HIERARCHY DIAGRAM */}
+          <div className="p-4 rounded-2xl bg-gradient-to-b from-slate-900/90 via-[#070c18] to-slate-900/90 border border-slate-800 space-y-3 shadow-xl">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800/90 pb-2.5">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <GitCompareArrows className="w-4 h-4 text-emerald-400" />
+                  Live Multi-Switch Interconnected Topology Diagram (
+                  {selectedSiteFilter === 'ALL' ? 'All Sites' : selectedSiteFilter})
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Visualizes all polled switches and discovered upstream/downstream switches connected together in real time. Click <strong className="text-sky-300">Load in 3D View</strong> on any switch to inspect its 3D chassis, or <strong className="text-emerald-300">Poll SSH</strong> to expand the tree.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-xs font-mono">
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                  Polled Switches: {filteredSwitchNodes.filter((n) => n.isPolled).length}
+                </span>
+                <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30">
+                  Discovered Core/Peer Switches: {filteredSwitchNodes.filter((n) => !n.isPolled).length}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-2 text-xs font-mono">
-              <span className="px-2.5 py-1 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
-                ✓ Verified Bi-Directional:{' '}
-                {filteredSiteLinks.filter((l) => l.verifiedBiDirectional).length}
-              </span>
-              <span className="px-2.5 py-1 rounded bg-amber-500/15 text-amber-300 border border-amber-500/30">
-                CDP Ready to Poll:{' '}
-                {filteredSiteLinks.filter((l) => !l.verifiedBiDirectional).length}
-              </span>
-            </div>
+
+            {/* TIER 1: CORE / BACKBONE SWITCHES (e.g. tcore-9600.net.fdu.edu) */}
+            {tier1CoreSwitches.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-purple-300 px-1">
+                  ▲ Tier 1 — Campus Core / Colocation Backbone Switches
+                </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                  {tier1CoreSwitches.map((sw) => renderVisualSwitchNode(sw))}
+                </div>
+              </div>
+            )}
+
+            {/* VISUAL FIBER / TRUNK CABLES BETWEEN TIER 1 (CORE) AND TIER 2 (MDF) */}
+            {coreToMdfLinks.length > 0 && (
+              <div className="py-1 flex flex-col items-center justify-center">
+                <div className="w-0.5 h-3 bg-cyan-400/70" />
+                <div className="flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-cyan-950/40 border border-cyan-500/40 text-xs font-mono">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-cyan-300" />
+                  <span className="text-cyan-200 font-bold">
+                    Core ↔ MDF Fiber Uplinks ({coreToMdfLinks.length}):
+                  </span>
+                  {coreToMdfLinks.map((lnk) => (
+                    <span
+                      key={lnk.id}
+                      className="px-2 py-0.5 rounded bg-slate-950 border border-cyan-500/40 text-slate-200"
+                    >
+                      <strong className="text-purple-300">{lnk.targetHostname}</strong>{' '}
+                      <span className="text-indigo-300">[{lnk.targetPort}]</span> ↔{' '}
+                      <span className="text-sky-300">[{lnk.sourcePort}]</span>{' '}
+                      <strong className="text-emerald-300">{lnk.sourceHostname}</strong> (
+                      {lnk.mediaShortLabel})
+                    </span>
+                  ))}
+                </div>
+                <div className="w-0.5 h-3 bg-cyan-400/70" />
+              </div>
+            )}
+
+            {/* TIER 2: MDF / DISTRIBUTION SWITCHES (e.g. T-BAN-2FL-WL) */}
+            {tier2MdfSwitches.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-300 px-1">
+                  ◆ Tier 2 — MDF / Distribution Switches & Attached Wireless APs
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {tier2MdfSwitches.map((sw) => renderVisualSwitchNode(sw))}
+                </div>
+              </div>
+            )}
+
+            {/* VISUAL TRUNK CABLES BETWEEN TIER 2 (MDF) AND TIER 3 (IDF / WORKSTUDY) */}
+            {mdfToIdfLinks.length > 0 && (
+              <div className="py-1 flex flex-col items-center justify-center">
+                <div className="w-0.5 h-3 bg-emerald-400" />
+                <div className="flex flex-wrap items-center justify-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-950/40 border border-emerald-500/50 text-xs font-mono">
+                  <ArrowUpDown className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="text-emerald-200 font-bold">
+                    MDF ↔ IDF Switch Trunk Interconnect ({mdfToIdfLinks.length}):
+                  </span>
+                  {mdfToIdfLinks.map((lnk) => (
+                    <span
+                      key={lnk.id}
+                      className="px-2.5 py-0.5 rounded bg-slate-950 border border-emerald-500/50 text-slate-100 flex items-center gap-1.5"
+                    >
+                      <strong className="text-emerald-300">{lnk.sourceHostname}</strong>{' '}
+                      <span className="text-sky-300 font-bold">[{lnk.sourcePort}]</span> ↔{' '}
+                      <span className="text-indigo-300 font-bold">[{lnk.targetPort}]</span>{' '}
+                      <strong className="text-emerald-300">{lnk.targetHostname}</strong> •{' '}
+                      <span className="text-amber-300">Native VLAN {lnk.nativeVlan}</span>
+                      {lnk.verifiedBiDirectional && (
+                        <span className="px-1.5 py-0.2 rounded bg-emerald-500/25 text-emerald-200 text-[10px] font-bold">
+                          ✓ Verified Both Ends
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                <div className="w-0.5 h-3 bg-emerald-400" />
+              </div>
+            )}
+
+            {/* TIER 3: DOWNSTREAM IDF / ACCESS SWITCHES (e.g. T-BAN-2FL-WorkStudy-C9300) */}
+            {tier3IdfSwitches.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-sky-300 px-1">
+                  ▼ Tier 3 — Downstream IDF / Access Switches
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  {tier3IdfSwitches.map((sw) => renderVisualSwitchNode(sw))}
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Point-A <-> Point-B Interconnect Link Cards */}
+          {/* SECTION 2: DETAILED POINT-A <-> POINT-B PHYSICAL INTERFACE TABLE */}
           <div className="space-y-2.5">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-slate-900/75 border border-slate-800 rounded-xl p-3">
+              <div>
+                <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-200">
+                  Point-A ↔ Point-B Physical Interface Link Matrix ({filteredSiteLinks.length} Links Shown)
+                </h4>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => setLinkTypeFilter('SWITCHES_ONLY')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono cursor-pointer transition ${
+                    linkTypeFilter === 'SWITCHES_ONLY'
+                      ? 'bg-emerald-500 text-slate-950 font-bold'
+                      : 'bg-slate-950 text-slate-300 border border-slate-800'
+                  }`}
+                >
+                  Switch-to-Switch Links ({(globalGraph.switchLinks || []).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLinkTypeFilter('ALL_LINKS')}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-mono cursor-pointer transition ${
+                    linkTypeFilter === 'ALL_LINKS'
+                      ? 'bg-sky-500 text-slate-950 font-bold'
+                      : 'bg-slate-950 text-slate-300 border border-slate-800'
+                  }`}
+                >
+                  All Links Incl. APs ({globalGraph.links.length})
+                </button>
+              </div>
+            </div>
+
             {filteredSiteLinks.map((lnk) => {
               const isFiber = lnk.mediaCategory === 'fiber';
               return (
                 <div
                   key={lnk.id}
-                  className={`p-3.5 rounded-xl border transition grid grid-cols-1 lg:grid-cols-12 gap-3 items-center ${
+                  className={`p-3 rounded-xl border transition grid grid-cols-1 lg:grid-cols-12 gap-3 items-center ${
                     lnk.verifiedBiDirectional
                       ? 'bg-emerald-950/20 border-emerald-500/50 shadow-lg shadow-emerald-500/5'
                       : 'bg-slate-900/75 border-slate-800 hover:border-sky-500/40'
@@ -722,7 +1096,7 @@ export default function TopologyViewer({
 
                   {/* CENTER: Physical Cable / Fiber Media, Speed, 802.1Q Trunk VLANs & Verification Status */}
                   <div className="lg:col-span-4 flex flex-col items-center justify-center px-2 text-center">
-                    <div className="flex items-center gap-1.5 mb-1">
+                    <div className="flex flex-wrap items-center justify-center gap-1.5 mb-1">
                       <span
                         className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-bold border ${
                           isFiber
@@ -739,7 +1113,6 @@ export default function TopologyViewer({
                       )}
                     </div>
 
-                    {/* Visual Cable Line between Point A and Point B */}
                     <div className="w-full flex items-center gap-2 my-0.5">
                       <div
                         className={`h-0.5 flex-1 ${
@@ -773,7 +1146,7 @@ export default function TopologyViewer({
                         </span>
                       ) : (
                         <span className="text-amber-300">
-                          Discovered via CDP • Poll Point B to verify remote chassis
+                          Discovered via CDP {lnk.poeWatts > 0 ? `• ⚡ ${lnk.poeWatts.toFixed(1)}W PoE` : ''}
                         </span>
                       )}
                     </div>
@@ -805,7 +1178,7 @@ export default function TopologyViewer({
                               : 'bg-amber-500/20 text-amber-300'
                           }`}
                         >
-                          POINT B • {lnk.verifiedBiDirectional ? 'POLLED' : 'CDP NEIGHBOR'}
+                          POINT B • {lnk.verifiedBiDirectional ? 'POLLED SWITCH' : 'CDP NEIGHBOR'}
                         </span>
                         <span className="text-[10px] font-mono text-emerald-400">
                           {lnk.targetIp}
@@ -819,9 +1192,9 @@ export default function TopologyViewer({
                       </div>
                     </div>
 
-                    {/* Action Button: Poll Neighbor via SSH if unpolled, or Load in 3D if polled */}
                     <div className="shrink-0">
                       {!lnk.verifiedBiDirectional &&
+                      lnk.isSwitchInterconnect &&
                       lnk.targetIp &&
                       lnk.targetIp !== '—' &&
                       onPollNeighbor ? (
@@ -834,9 +1207,13 @@ export default function TopologyViewer({
                           <Terminal className="w-3 h-3" />
                           Poll SSH
                         </button>
+                      ) : lnk.verifiedBiDirectional ? (
+                        <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono font-bold">
+                          ✓ Polled
+                        </span>
                       ) : (
-                        <span className="px-2 py-1 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-mono">
-                          In SQL DB
+                        <span className="px-2 py-1 rounded bg-slate-800 text-slate-300 text-[10px] font-mono">
+                          AP / Edge
                         </span>
                       )}
                     </div>
@@ -844,75 +1221,6 @@ export default function TopologyViewer({
                 </div>
               );
             })}
-          </div>
-
-          {/* Site Switch Inventory Grid (Polled Switches + Unpolled Discovered Switches) */}
-          <div className="pt-2">
-            <div className="text-xs font-mono uppercase tracking-wider text-slate-400 mb-2">
-              Discovered & Polled Network Devices in View ({filteredSiteNodes.length})
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-              {filteredSiteNodes.map((node) => (
-                <div
-                  key={node.id}
-                  className={`p-3 rounded-xl border flex items-center justify-between gap-2 ${
-                    node.isPolled
-                      ? 'bg-slate-900/80 border-sky-500/50'
-                      : 'bg-slate-950/70 border-amber-500/40 border-dashed'
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold ${
-                          node.isPolled
-                            ? 'bg-sky-500/20 text-sky-300'
-                            : 'bg-amber-500/20 text-amber-300'
-                        }`}
-                      >
-                        {node.siteCode} • {node.isPolled ? `${node.portCount}-PORT POLLED` : 'CDP DISCOVERED'}
-                      </span>
-                      <span className="text-[10px] font-mono text-emerald-300">
-                        {node.mgmtIp}
-                      </span>
-                    </div>
-                    <div className="text-xs font-bold text-white truncate mt-1">
-                      {node.hostname}
-                    </div>
-                    <div className="text-[10px] font-mono text-slate-400">
-                      Model: {node.model} {node.serialNumber !== 'UNPOLLED' ? `• S/N: ${node.serialNumber}` : ''}
-                    </div>
-                  </div>
-
-                  {node.isPolled ? (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (onSelectSavedDevice && node.serialNumber !== 'UNPOLLED') {
-                          onSelectSavedDevice(node.serialNumber);
-                        }
-                        setTopologyLevel('switch-ports');
-                      }}
-                      className="px-2.5 py-1.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-500/40 text-sky-200 text-[11px] font-mono font-semibold shrink-0 cursor-pointer"
-                    >
-                      Inspect 3D
-                    </button>
-                  ) : (
-                    node.mgmtIp &&
-                    node.mgmtIp !== '—' &&
-                    onPollNeighbor && (
-                      <button
-                        type="button"
-                        onClick={() => onPollNeighbor(node.mgmtIp, node.hostname)}
-                        className="px-2.5 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-mono font-bold shrink-0 flex items-center gap-1 cursor-pointer"
-                      >
-                        <Terminal className="w-3 h-3" /> Poll SSH
-                      </button>
-                    )
-                  )}
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       )}
@@ -946,7 +1254,7 @@ export default function TopologyViewer({
                     }}
                     className="text-[10px] font-mono text-sky-300 hover:text-sky-200 underline cursor-pointer"
                   >
-                    View Point A↔B Graph
+                    View Multi-Switch Map
                   </button>
                 </div>
                 {cdpNeighbors.length > 0 ? (

@@ -258,8 +258,15 @@ export function inferSiteCode(hostnameOrObj = '', rawSiteName = '') {
   if (sUpper.includes('METRO')) return 'Metro';
 
   const h = String(hostname).trim().toUpperCase();
-  if (h.startsWith('T-') || h.includes('-BAN-') || h.includes('METRO')) return 'Metro';
-  if (h.startsWith('F-') || h.startsWith('M-') || h.includes('FLOR')) return 'Florham';
+  if (
+    h.startsWith('T-') ||
+    h.startsWith('TCORE') ||
+    h.includes('-BAN-') ||
+    h.includes('METRO')
+  ) {
+    return 'Metro';
+  }
+  if (h.startsWith('F-') || h.startsWith('FCORE') || h.includes('FLOR')) return 'Florham';
   if (h.includes('HALSEY') || h.startsWith('H165')) return 'Halsey165';
   if (h.startsWith('V-') || h.includes('VANC') || h.includes('OAK')) return 'VancOakridge';
   if (h.includes('HAST')) return 'Hastings';
@@ -269,27 +276,46 @@ export function inferSiteCode(hostnameOrObj = '', rawSiteName = '') {
   return 'Metro';
 }
 
-// Strip domain suffix (e.g. "T-BAN-1FL-108B-MDF-C9300X.fdu.edu" -> "T-BAN-1FL-108B-MDF-C9300X")
+// Strip domain suffix (e.g. "T-BAN-1FL-108B-MDF-C9300X.fdu.edu" or "T-BAN-2FL-WL.net.fdu.edu" -> "T-BAN-2FL-WL")
 export function normalizeHostname(name = '') {
   return String(name)
     .trim()
-    .replace(/\.[a-zA-Z0-9.-]+$/, '')
+    .replace(/\.(?:net\.fdu\.edu|fdu\.edu|local|lan|corp|[a-zA-Z0-9.-]+)$/i, '')
     .toUpperCase();
+}
+
+// Determine if a CDP neighbor is a Wireless AP / Phone / Endpoint vs a Switch / Core Router
+export function isWirelessOrEndpoint(platform = '', capabilities = '', hostname = '') {
+  const p = String(platform).toUpperCase();
+  const c = String(capabilities).toUpperCase();
+  const h = String(hostname).toUpperCase();
+  if (
+    /AIR-|C9105|C9115|C9120|C9124|C9130|C9136|C9162|C9164|C9166|CW916|AP1G|PHONE|SEP[0-9A-F]{12}/i.test(
+      `${p} ${h}`
+    )
+  ) {
+    return true;
+  }
+  if (c.includes('TRANS-BRIDGE') && !c.includes('SWITCH')) {
+    return true;
+  }
+  return false;
 }
 
 // Determine if an interface/media type is Fiber Optic vs Copper Ethernet
 export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '', platform = '') {
   const m = `${mediaType} ${localPort} ${remotePort}`.toUpperCase();
   if (
-    m.includes('BASETX') ||
-    m.includes('BASE-T') ||
-    m.includes('RJ45') ||
-    m.includes('10/100/1000')
+    /^(?:TW|FO|HU)\d+\/1\//.test(localPort.toUpperCase()) ||
+    /^(?:TW|FO|HU)\d+\/\d+\//.test(remotePort.toUpperCase()) ||
+    m.includes('25G') ||
+    m.includes('40G') ||
+    m.includes('100G')
   ) {
     return {
-      category: 'copper',
-      label: 'Copper Ethernet (Cat6/Cat6A)',
-      shortLabel: 'Copper RJ-45'
+      category: 'fiber',
+      label: '25G / 40G Fiber Optic Trunk (SFP28/QSFP+)',
+      shortLabel: '25G Fiber Optic'
     };
   }
   if (
@@ -298,9 +324,6 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
     m.includes('-SR') ||
     m.includes('-LR') ||
     m.includes('-ER') ||
-    m.includes('FO1/') ||
-    m.includes('TW1/') ||
-    m.includes('HU1/') ||
     /^(?:TE|FO|TW|HU)\d+\/1\//.test(localPort.toUpperCase()) ||
     /^(?:TE|FO|TW|HU)\d+\/1\//.test(remotePort.toUpperCase())
   ) {
@@ -310,7 +333,7 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
       shortLabel: 'Fiber Optic'
     };
   }
-  if (String(platform).toUpperCase().includes('AIR-') || String(platform).toUpperCase().includes('C91')) {
+  if (isWirelessOrEndpoint(platform, '', '')) {
     return {
       category: 'copper-poe',
       label: 'Copper PoE/UPOE Access Cable',
@@ -319,15 +342,17 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
   }
   return {
     category: 'copper',
-    label: 'Physical Switch Interconnect (mGig/10G)',
-    shortLabel: 'Copper / mGig'
+    label: '10G mGig / Copper Switch Trunk',
+    shortLabel: '10G mGig Trunk'
   };
 }
 
 /**
  * Reconciles all polled switches in PostgreSQL + their CDP neighbors into:
  * - nodes: Polled switches + Unpolled CDP neighbor switches/routers/APs
- * - links: Point-A [Port A] <---> [Port B] Point-B physical connections (deduplicated & bi-directionally verified when both ends are polled)
+ * - switchNodes: Only Switches / Core Routers (with attachedEndpoints[] and tier: 1 | 2 | 3)
+ * - links: All Point-A [Port A] <---> [Port B] Point-B physical connections
+ * - switchLinks: Switch-to-Switch physical interconnections (for the visual multi-switch diagram)
  * - siteSummary / siteStats: Per-site counts for Metro, Florham, Halsey165, VancOakridge, Hastings
  */
 export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch = null) {
@@ -383,6 +408,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
     const siteCode = inferSiteCode(hostname, dev.site_name);
     const ports = snap.ports48 || [];
     const connectedPorts = ports.filter((p) => p.status === 'up').length;
+    const totalPoeWatts = ports.reduce((acc, p) => acc + (p.poeWatts || 0), 0);
 
     const node = {
       id: normHost,
@@ -397,17 +423,20 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       siteCode,
       buildingName: dev.building_name || 'Campus MDF/IDF',
       isPolled: true,
+      isSwitchNode: true,
       nodeRole:
         siteCode === 'Halsey165' || siteCode === 'Hastings'
           ? 'colocation-switch'
-          : hostname.toUpperCase().includes('MDF') || hostname.toUpperCase().includes('CORE')
-          ? 'core-mdf-switch'
-          : 'access-idf-switch',
+          : /C9600|C9606|C9500|CORE/i.test(`${model} ${hostname}`)
+          ? 'core-switch'
+          : 'campus-switch',
       connectedPorts,
       totalPorts: ports.length || (model.includes('-24') ? 24 : 48),
+      totalPoeWatts,
       cdpCount: (snap.cdpNeighbors || []).length,
       trunkCount: (snap.trunks || []).length,
       vlanCount: (snap.vlans || []).length,
+      attachedEndpoints: [],
       rawDeviceRecord: dev
     };
 
@@ -451,36 +480,68 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
         polledByNormHost.get(targetNorm) ||
         (cdp.neighborIp && cdp.neighborIp !== '—' ? polledByIp.get(cdp.neighborIp) : null);
 
-      const isSwitchOrRouter =
-        /switch|router|c9300|c9500|c9200|c9400|c9600|nexus|isr|asr|cat9k/i.test(
-          `${cdp.platform || ''} ${cdp.capabilities || ''} ${targetRawHost}`
-        ) && !/air-|c9120|c9130|cw916/i.test(cdp.platform || '');
+      const isEndpoint = isWirelessOrEndpoint(
+        cdp.platform || '',
+        cdp.capabilities || '',
+        targetRawHost
+      );
+      const isSwitchOrRouter = !isEndpoint;
 
       if (!targetNode) {
         const inferredSite = inferSiteCode(targetRawHost, sourceNode.siteCode);
         targetNode = nodesByKey.get(targetNorm);
         if (!targetNode) {
+          const cleanPlatform = cdp.platform
+            ? cdp.platform.replace(/^cisco\s+/i, '').trim()
+            : 'CDP Neighbor';
+          const isCoreChassis = /C9600|C9606|C9500|CORE|NEXUS/i.test(
+            `${cleanPlatform} ${targetRawHost}`
+          );
           targetNode = {
             id: targetNorm,
             key: targetNorm,
             hostname: targetRawHost,
             normHost: targetNorm,
-            model: cdp.platform ? cdp.platform.replace(/^cisco\s+/i, '') : 'CDP Neighbor',
-            portCount: cdp.platform?.includes('-24') ? 24 : 48,
+            model: cleanPlatform,
+            portCount: cleanPlatform.includes('-24') ? 24 : 48,
             serialNumber: 'UNPOLLED',
             iosVersion: cdp.softwareVersion || 'Discovered via CDP',
             mgmtIp: cdp.neighborIp || '—',
             siteCode: inferredSite,
             buildingName: `Connected via ${sourceHost} (${localPort})`,
             isPolled: false,
-            nodeRole: isSwitchOrRouter ? 'unpolled-switch' : 'endpoint-device',
+            isSwitchNode: isSwitchOrRouter,
+            nodeRole: isCoreChassis
+              ? 'core-switch'
+              : isSwitchOrRouter
+              ? 'unpolled-switch'
+              : 'endpoint-device',
             connectedPorts: 1,
-            totalPorts: cdp.platform?.includes('-24') ? 24 : 48,
+            totalPorts: cleanPlatform.includes('-24') ? 24 : 48,
+            totalPoeWatts: 0,
             cdpCount: 0,
             trunkCount: 0,
-            vlanCount: 0
+            vlanCount: 0,
+            attachedEndpoints: []
           };
           nodesByKey.set(targetNorm, targetNode);
+        }
+      }
+
+      // If this neighbor is an AP/Endpoint, attach it to sourceNode.attachedEndpoints for the visual node badge
+      if (isEndpoint) {
+        const alreadyAttached = sourceNode.attachedEndpoints.some(
+          (ep) => ep.localPort === localPort && ep.hostname === targetRawHost
+        );
+        if (!alreadyAttached) {
+          sourceNode.attachedEndpoints.push({
+            hostname: targetRawHost,
+            ip: cdp.neighborIp || '—',
+            model: cdp.platform ? cdp.platform.replace(/^cisco\s+/i, '').trim() : 'AP',
+            localPort,
+            remotePort,
+            poeWatts: cdp.powerWatts || 0
+          });
         }
       }
 
@@ -493,7 +554,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
         cdp.platform || ''
       );
 
-      // Canonical key so SwitchA(Te1/0/24)<->SwitchB(Te1/0/7) and SwitchB(Te1/0/7)<->SwitchA(Te1/0/24) merge!
+      // Canonical key so SwitchA(Te1/0/24)<->SwitchB(Te1/0/20) and SwitchB(Te1/0/20)<->SwitchA(Te1/0/24) merge!
       const endpointA = `${sourceNode.key}:${localPort}`;
       const endpointB = `${targetNode.key}:${remotePort}`;
       const canonicalKey =
@@ -522,10 +583,11 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           targetIsPolled: targetNode.isPolled,
           targetRole: targetNode.nodeRole,
           targetSerial: targetNode.serialNumber,
+          isSwitchInterconnect: Boolean(sourceNode.isSwitchNode && targetNode.isSwitchNode),
           mediaCategory: mediaInfo.category,
           mediaLabel: mediaInfo.label,
           mediaShortLabel: mediaInfo.shortLabel,
-          speed: localPortObj?.speed || localPortObj?.runningSpeed || '10G / Auto',
+          speed: localPortObj?.speed || localPortObj?.runningSpeed || '10G / 25G',
           isTrunk: Boolean(trunkObj) || Boolean(localPortObj?.isTrunk),
           nativeVlan: trunkObj?.nativeVlan || cdp.nativeVlan || localPortObj?.vlan || 1,
           allowedVlans: trunkObj?.allowedVlans || 'ALL',
@@ -539,34 +601,73 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
 
   const allNodes = Array.from(nodesByKey.values());
   const allLinks = Array.from(linksByCanonicalKey.values());
+  const switchNodes = allNodes.filter((n) => n.isSwitchNode);
+  const switchLinks = allLinks.filter((l) => l.isSwitchInterconnect);
 
-  // Step 3: Compute Per-Site Summary Rollups for Metro, Florham, Halsey165, VancOakridge, Hastings
+  // Step 3: Assign Hierarchical Tiers (Tier 1 Core -> Tier 2 Distribution/MDF -> Tier 3 Access/IDF)
+  // so the Visual Multi-Switch Topology Diagram renders top-down like a real network architecture diagram!
+  const coreKeys = new Set(
+    switchNodes
+      .filter((n) => n.nodeRole === 'core-switch' || n.nodeRole === 'colocation-switch')
+      .map((n) => n.key)
+  );
+
+  // Any switch directly linked to a Tier 1 Core switch is Tier 2 (Distribution / MDF)
+  const tier2Keys = new Set();
+  for (const lnk of switchLinks) {
+    if (coreKeys.has(lnk.sourceKey) && !coreKeys.has(lnk.targetKey)) {
+      tier2Keys.add(lnk.targetKey);
+    } else if (coreKeys.has(lnk.targetKey) && !coreKeys.has(lnk.sourceKey)) {
+      tier2Keys.add(lnk.sourceKey);
+    }
+  }
+
+  // If no explicit C9600/C9500 core was discovered yet, promote the switch with the most switch links to Tier 2
+  for (const sw of switchNodes) {
+    if (coreKeys.has(sw.key)) {
+      sw.hierarchyTier = 1;
+      sw.tierLabel = 'Tier 1 • Core / Backbone';
+    } else if (tier2Keys.has(sw.key) || sw.attachedEndpoints.length > 0) {
+      sw.hierarchyTier = 2;
+      sw.tierLabel = 'Tier 2 • MDF / Distribution Switch';
+    } else {
+      sw.hierarchyTier = 3;
+      sw.tierLabel = 'Tier 3 • IDF / Downstream Switch';
+    }
+  }
+
+  // Step 4: Compute Per-Site Summary Rollups for Metro, Florham, Halsey165, VancOakridge, Hastings
   const siteStats = {};
   for (const site of GLOBAL_SITES) {
     const siteKey = site.code;
     const siteNodes = allNodes.filter((n) => n.siteCode === siteKey);
     const polledSwitches = siteNodes.filter((n) => n.isPolled);
-    const unpolledNodes = siteNodes.filter((n) => !n.isPolled);
+    const unpolledSwitches = siteNodes.filter((n) => !n.isPolled && n.isSwitchNode);
+    const endpoints = siteNodes.filter((n) => !n.isSwitchNode);
     const siteLinks = allLinks.filter((l) => l.siteCode === siteKey);
 
     siteStats[siteKey] = {
       polledCount: polledSwitches.length,
-      neighborCount: unpolledNodes.length,
+      neighborCount: unpolledSwitches.length + endpoints.length,
+      unpolledSwitchCount: unpolledSwitches.length,
+      endpointCount: endpoints.length,
       totalNodes: siteNodes.length,
       linkCount: siteLinks.length,
+      switchLinkCount: siteLinks.filter((l) => l.isSwitchInterconnect).length,
       polledSwitchCount: polledSwitches.length,
-      unpolledSwitchCount: unpolledNodes.length,
       totalDiscoveredNodes: siteNodes.length,
       interconnectLinkCount: siteLinks.length,
       polledSwitches,
-      unpolledSwitches: unpolledNodes,
+      unpolledSwitches,
       siteLinks
     };
   }
 
   return {
     nodes: allNodes,
+    switchNodes,
     links: allLinks,
+    switchLinks,
     siteStats,
     siteSummary: siteStats
   };
