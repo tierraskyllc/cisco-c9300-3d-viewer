@@ -93,6 +93,16 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
   return null;
 }
 
+// Helper to shorten raw Cisco IOS-XE version strings (e.g. "Cisco IOS Software [Dublin]... Version 17.12.4, RELEASE..." -> "17.12.4")
+function formatShortIosVersion(raw) {
+  if (!raw) return '17.15.04';
+  const str = String(raw);
+  const m = str.match(/Version\s+([0-9A-Za-z.()]+)/i);
+  if (m) return m[1].replace(/,$/, '');
+  if (str.length > 16) return str.slice(0, 16);
+  return str;
+}
+
 /**
  * Glowing 3D Isometric Zone Platform Pad (matches the reference blueprint pads in 3D space)
  */
@@ -102,7 +112,8 @@ function ZonePlatform3D({
   baseColor = '#0c1938',
   rimColor = '#38bdf8',
   title,
-  subtitle
+  subtitle,
+  showZoneTitles = false
 }) {
   const [w, h, d] = size;
   return (
@@ -125,7 +136,6 @@ function ZonePlatform3D({
       </mesh>
 
       {/* 4 Glowing Perimeter Edge Bars */}
-      {/* Front & Back Edges */}
       <mesh position={[0, 0.02, d / 2 - 0.05]}>
         <boxGeometry args={[w - 0.1, 0.05, 0.08]} />
         <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.6} />
@@ -134,7 +144,6 @@ function ZonePlatform3D({
         <boxGeometry args={[w - 0.1, 0.05, 0.08]} />
         <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.2} />
       </mesh>
-      {/* Left & Right Edges */}
       <mesh position={[-w / 2 + 0.05, 0.02, 0]}>
         <boxGeometry args={[0.08, 0.05, d - 0.1]} />
         <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.4} />
@@ -144,23 +153,18 @@ function ZonePlatform3D({
         <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.4} />
       </mesh>
 
-      {/* Clean Outer Rim Zone Title Pill (positioned along the front-left rim so it never collides with devices) */}
-      {title && (
-        <Html
-          position={[-w / 2 + 0.6, 0.12, d / 2 + 0.55]}
-          center={false}
-          distanceFactor={28}
-          zIndexRange={[10, 0]}
-        >
-          <div className="pointer-events-none select-none whitespace-nowrap px-2.5 py-1 rounded-md bg-slate-950/90 border border-slate-700/80 shadow-lg">
+      {/* Optional Zone Title Pill */}
+      {showZoneTitles && title && (
+        <Html position={[-w / 2 + 0.6, 0.12, d / 2 + 0.55]} center={false} zIndexRange={[5, 0]}>
+          <div className="pointer-events-none select-none whitespace-nowrap px-2 py-0.5 rounded bg-slate-950/85 border border-slate-700/80 shadow">
             <div
-              className="text-[10px] font-mono font-bold tracking-wider uppercase"
+              className="text-[9px] font-mono font-bold tracking-wider uppercase"
               style={{ color: rimColor }}
             >
               {title}
             </div>
             {subtitle && (
-              <div className="text-[9px] font-mono text-slate-400">{subtitle}</div>
+              <div className="text-[8px] font-mono text-slate-400">{subtitle}</div>
             )}
           </div>
         </Html>
@@ -189,8 +193,6 @@ function ConduitLink3D({
   const curve = useMemo(() => {
     const p0 = new THREE.Vector3(...startPos);
     const p3 = new THREE.Vector3(...endPos);
-    const mid = p0.clone().lerp(p3, 0.5);
-    // Elevate control points slightly for clean architectural routing
     const dist = p0.distanceTo(p3);
     const arcHeight = Math.min(1.6, Math.max(0.35, dist * 0.12));
     const p1 = new THREE.Vector3(p0.x, Math.max(p0.y, p3.y) + arcHeight, (p0.z * 2 + p3.z) / 3);
@@ -217,6 +219,9 @@ function ConduitLink3D({
       packet2Ref.current.position.copy(pt2);
     }
   });
+
+  const shouldShowLinkBadge =
+    hovered || isSelected || (showLinkBadges && link.isPrimaryTrunk);
 
   return (
     <group>
@@ -254,14 +259,9 @@ function ConduitLink3D({
         <meshBasicMaterial color={color} />
       </mesh>
 
-      {/* Compact Midpoint Link Badge (Shown for Switch-to-Switch trunks or when hovered/selected) */}
-      {(hovered || isSelected || (showLinkBadges && link.isPrimaryTrunk)) && (
-        <Html
-          position={[midPoint.x, midPoint.y + 0.55, midPoint.z]}
-          center
-          distanceFactor={24}
-          zIndexRange={[30, 0]}
-        >
+      {/* Midpoint Link Badge (Shown when hovered/selected or when Trunk Callouts toggle is ON) */}
+      {shouldShowLinkBadge && (
+        <Html position={[midPoint.x, midPoint.y + 0.55, midPoint.z]} center zIndexRange={[30, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
@@ -272,13 +272,13 @@ function ConduitLink3D({
                 pos: [midPoint.x, midPoint.y, midPoint.z]
               });
             }}
-            className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-xl transition ${
+            className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-xl transition ${
               isSelected
-                ? 'bg-slate-900 border-white text-white scale-105'
-                : 'bg-slate-950/95 border-slate-700/90 text-slate-100 hover:border-sky-400'
+                ? 'bg-slate-900 border-white text-white'
+                : 'bg-slate-950/90 border-slate-700/90 text-slate-100 hover:border-sky-400'
             }`}
           >
-            <div className="flex items-center gap-1.5 text-[10px] font-mono font-bold" style={{ color }}>
+            <div className="flex items-center gap-1 text-[10px] font-mono font-bold" style={{ color }}>
               <span>{link.badgeTitle}</span>
               {link.verified && (
                 <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[8px]">
@@ -286,7 +286,9 @@ function ConduitLink3D({
                 </span>
               )}
             </div>
-            <div className="text-[9px] font-mono text-slate-300">{link.badgeSubtitle}</div>
+            {(hovered || isSelected) && (
+              <div className="text-[9px] font-mono text-slate-300">{link.badgeSubtitle}</div>
+            )}
           </div>
         </Html>
       )}
@@ -302,9 +304,19 @@ function CoreChassis9606R3D({
   position,
   isSelected,
   onSelect,
-  showBadges
+  labelMode
 }) {
   const [hovered, setHovered] = useState(false);
+  const shortIos = formatShortIosVersion(node.iosVersion);
+  const shortName = (node.hostname || 'tcore-9600').replace(/\.net\.fdu\.edu$/i, '');
+
+  const visible =
+    hovered ||
+    isSelected ||
+    labelMode === 'switches' ||
+    labelMode === 'compact' ||
+    labelMode === 'all';
+  const showFullDetails = hovered || isSelected || labelMode === 'all' || labelMode === 'switches';
 
   return (
     <group
@@ -342,13 +354,12 @@ function CoreChassis9606R3D({
         <meshBasicMaterial color="#fb923c" />
       </mesh>
 
-      {/* 6 Front Modular Linecard / Supervisor Slots (2x Linecards + 2x Sup-1 + 2x Linecards) */}
+      {/* 6 Front Modular Linecard / Supervisor Slots */}
       {[0, 1, 2, 3, 4, 5].map((slotIdx) => {
         const y = 0.35 + slotIdx * 0.38;
         const isSup = slotIdx === 2 || slotIdx === 3;
         return (
           <group key={slotIdx} position={[0, y, 1.31]}>
-            {/* Bezel Plate */}
             <mesh>
               <boxGeometry args={[2.9, 0.3, 0.04]} />
               <meshStandardMaterial
@@ -357,7 +368,6 @@ function CoreChassis9606R3D({
                 roughness={0.4}
               />
             </mesh>
-            {/* SFP28 / QSFP Port LEDs along each Linecard */}
             {[-1.1, -0.75, -0.4, -0.05, 0.3, 0.65, 1.0].map((lx, lIdx) => (
               <mesh key={lIdx} position={[lx, 0, 0.03]}>
                 <boxGeometry args={[0.16, 0.1, 0.02]} />
@@ -377,29 +387,31 @@ function CoreChassis9606R3D({
       })}
 
       {/* Floating Compact 3D Badge */}
-      {(showBadges || hovered || isSelected) && (
-        <Html position={[0, 3.45, 0]} center distanceFactor={25} zIndexRange={[25, 0]}>
+      {visible && (
+        <Html position={[0, 3.35, 0]} center zIndexRange={[25, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
               onSelect({ type: 'device', data: node, id: node.id, pos: position });
             }}
-            className={`cursor-pointer select-none whitespace-nowrap px-3 py-1.5 rounded-xl border shadow-2xl transition ${
+            className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-xl transition ${
               isSelected
-                ? 'bg-amber-950/95 border-amber-300 ring-2 ring-amber-400/50 scale-105'
-                : 'bg-slate-950/95 border-amber-500/60 hover:border-amber-300'
+                ? 'bg-amber-950/95 border-amber-300 ring-1 ring-amber-400/50'
+                : 'bg-slate-950/90 border-amber-500/60 hover:border-amber-300'
             }`}
           >
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-              <span className="text-xs font-mono font-bold text-white">{node.hostname}</span>
-              <span className="px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[9px] font-mono font-bold">
-                TIER 1 CORE
+              <span className="text-[11px] font-mono font-bold text-white">{shortName}</span>
+              <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[8px] font-mono font-bold">
+                CORE
               </span>
             </div>
-            <div className="text-[10px] font-mono text-slate-300 mt-0.5">
-              {node.model || 'Cisco C9606R'} • <span className="text-emerald-300">{node.mgmtIp}</span> • IOS-XE {node.iosVersion}
-            </div>
+            {showFullDetails && (
+              <div className="text-[9px] font-mono text-slate-300 mt-0.5">
+                {node.model || 'C9606R'} • <span className="text-emerald-300">{node.mgmtIp}</span> • IOS-XE {shortIos}
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -416,10 +428,18 @@ function SwitchC9300Node3D({
   isSelected,
   isActiveChassis,
   onSelect,
-  showBadges
+  labelMode
 }) {
   const [hovered, setHovered] = useState(false);
   const accentColor = node.role === 'MDF / Distribution' ? '#38bdf8' : '#10b981';
+
+  const visible =
+    hovered ||
+    isSelected ||
+    labelMode === 'switches' ||
+    labelMode === 'compact' ||
+    labelMode === 'all';
+  const showFullDetails = hovered || isSelected || labelMode === 'all' || labelMode === 'switches';
 
   return (
     <group
@@ -457,12 +477,11 @@ function SwitchC9300Node3D({
         />
       </RoundedBox>
 
-      {/* Top 4-Way Switching Arrows Emblem (Matches reference Isometric 3D Switch Block) */}
+      {/* Top 4-Way Switching Arrows Emblem */}
       <mesh position={[0, 1.19, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[2.6, 1.3]} />
         <meshBasicMaterial color="#0f172a" transparent opacity={0.65} />
       </mesh>
-      {/* Crossbar Top Switching Stripes */}
       <mesh position={[0, 1.2, 0]}>
         <boxGeometry args={[1.8, 0.02, 0.14]} />
         <meshBasicMaterial color={accentColor} />
@@ -489,24 +508,17 @@ function SwitchC9300Node3D({
         const x = -1.25 + colIdx * 0.17;
         const oddPortNum = colIdx * 2 + 1;
         const evenPortNum = oddPortNum + 1;
-        // Highlight actual active ports on T-BAN-2FL-WL (1,2,4,5,6,8,14,20) and WorkStudy (24)
-        const isOddUp =
-          node.hostname?.includes('WL')
-            ? [1, 5].includes(oddPortNum)
-            : false;
-        const isEvenUp =
-          node.hostname?.includes('WL')
-            ? [2, 4, 6, 8, 14, 20].includes(evenPortNum)
-            : evenPortNum === 24;
+        const isOddUp = node.hostname?.includes('WL') ? [1, 5].includes(oddPortNum) : false;
+        const isEvenUp = node.hostname?.includes('WL')
+          ? [2, 4, 6, 8, 14, 20].includes(evenPortNum)
+          : evenPortNum === 24;
 
         return (
           <group key={colIdx}>
-            {/* Odd Top Row Port */}
             <mesh position={[x, 0.94, 1.23]}>
               <boxGeometry args={[0.12, 0.13, 0.03]} />
               <meshBasicMaterial color={isOddUp ? '#10b981' : '#1e293b'} />
             </mesh>
-            {/* Even Bottom Row Port */}
             <mesh position={[x, 0.74, 1.23]}>
               <boxGeometry args={[0.12, 0.13, 0.03]} />
               <meshBasicMaterial
@@ -523,7 +535,7 @@ function SwitchC9300Node3D({
         );
       })}
 
-      {/* Right C9300-NM-8X Modular Uplink Bay (Tw1/1/1 & Tw1/1/2 SFP28) */}
+      {/* Right C9300-NM-8X Modular Uplink Bay */}
       <mesh position={[1.25, 0.84, 1.23]}>
         <boxGeometry args={[0.85, 0.36, 0.03]} />
         <meshBasicMaterial color="#090d16" />
@@ -539,17 +551,17 @@ function SwitchC9300Node3D({
       })}
 
       {/* Compact Non-Overlapping Floating 3D Badge */}
-      {(showBadges || hovered || isSelected) && (
-        <Html position={[0, 1.85, 0]} center distanceFactor={25} zIndexRange={[25, 0]}>
+      {visible && (
+        <Html position={[0, 1.75, 0]} center zIndexRange={[25, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
               onSelect({ type: 'device', data: node, id: node.id, pos: position });
             }}
-            className={`cursor-pointer select-none whitespace-nowrap px-3 py-1.5 rounded-xl border shadow-2xl transition ${
+            className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-xl transition ${
               isSelected
-                ? 'bg-sky-950/95 border-white ring-2 ring-sky-400/60 scale-105'
-                : 'bg-slate-950/95 border-sky-500/60 hover:border-sky-300'
+                ? 'bg-sky-950/95 border-white ring-1 ring-sky-400/60'
+                : 'bg-slate-950/90 border-sky-500/60 hover:border-sky-300'
             }`}
           >
             <div className="flex items-center gap-1.5">
@@ -557,19 +569,21 @@ function SwitchC9300Node3D({
                 className="w-2 h-2 rounded-full"
                 style={{ backgroundColor: accentColor }}
               />
-              <span className="text-xs font-mono font-bold text-white">{node.hostname}</span>
-              <span className="px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[9px] font-mono font-bold">
-                {node.isPolled ? 'POLLED SQL' : 'CDP'}
+              <span className="text-[11px] font-mono font-bold text-white">{node.hostname}</span>
+              <span className="px-1 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[8px] font-mono font-bold">
+                {node.isPolled ? 'SQL' : 'CDP'}
               </span>
             </div>
-            <div className="text-[10px] font-mono text-slate-300 mt-0.5">
-              {node.model} • <span className="text-sky-300">{node.mgmtIp}</span>
-              {node.totalPoeWatts > 0 ? (
-                <span className="text-amber-300"> • ⚡ {node.totalPoeWatts.toFixed(1)}W PoE</span>
-              ) : (
-                <span className="text-emerald-300"> • {node.connectedPorts || 1}/{node.totalPorts || 24} Up</span>
-              )}
-            </div>
+            {showFullDetails && (
+              <div className="text-[9px] font-mono text-slate-300 mt-0.5">
+                {node.model} • <span className="text-sky-300">{node.mgmtIp}</span>
+                {node.totalPoeWatts > 0 ? (
+                  <span className="text-amber-300"> • ⚡ {node.totalPoeWatts.toFixed(1)}W</span>
+                ) : (
+                  <span className="text-emerald-300"> • {node.connectedPorts || 1}/{node.totalPorts || 24} Up</span>
+                )}
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -585,9 +599,12 @@ function WirelessApNode3D({
   position,
   isSelected,
   onSelect,
-  showBadges
+  labelMode
 }) {
   const [hovered, setHovered] = useState(false);
+
+  const visible = hovered || isSelected || labelMode === 'compact' || labelMode === 'all';
+  const showFullDetails = hovered || isSelected || labelMode === 'all';
 
   return (
     <group
@@ -625,25 +642,27 @@ function WirelessApNode3D({
       </mesh>
 
       {/* Compact Floating AP Tag */}
-      {(showBadges || hovered || isSelected) && (
-        <Html position={[0, 0.85, 0]} center distanceFactor={26} zIndexRange={[20, 0]}>
+      {visible && (
+        <Html position={[0, 0.78, 0]} center zIndexRange={[20, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
               onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position });
             }}
-            className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-lg border shadow-lg transition ${
+            className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-lg transition ${
               isSelected
-                ? 'bg-emerald-950 border-emerald-300 text-white scale-105'
+                ? 'bg-emerald-950 border-emerald-300 text-white'
                 : 'bg-slate-950/90 border-emerald-500/45 text-slate-100 hover:border-emerald-300'
             }`}
           >
-            <div className="text-[10px] font-mono font-bold text-emerald-300">
+            <div className="text-[9.5px] font-mono font-bold text-emerald-300">
               [{ap.localPort}] {ap.hostname}
             </div>
-            <div className="text-[9px] font-mono text-slate-300">
-              {ap.ip} • {ap.model} • <span className="text-amber-300">{ap.poeWatts}W</span>
-            </div>
+            {showFullDetails && (
+              <div className="text-[8.5px] font-mono text-slate-300">
+                {ap.ip} • {ap.model} • <span className="text-amber-300">{ap.poeWatts}W</span>
+              </div>
+            )}
           </div>
         </Html>
       )}
@@ -659,10 +678,13 @@ function ColocationHub3D({
   position,
   isSelected,
   onSelect,
-  showBadges
+  labelMode
 }) {
   const [hovered, setHovered] = useState(false);
   const color = site.country === 'CA' ? '#f43f5e' : '#a855f7';
+
+  const visible = hovered || isSelected || labelMode === 'compact' || labelMode === 'all';
+  const showFullDetails = hovered || isSelected || labelMode === 'all';
 
   return (
     <group
@@ -689,23 +711,25 @@ function ColocationHub3D({
         <meshBasicMaterial color={color} />
       </mesh>
 
-      {(showBadges || hovered || isSelected) && (
-        <Html position={[0, 1.75, 0]} center distanceFactor={26} zIndexRange={[20, 0]}>
+      {visible && (
+        <Html position={[0, 1.65, 0]} center zIndexRange={[20, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
               onSelect({ type: 'site', data: site, id: site.code, pos: position });
             }}
-            className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-lg transition ${
+            className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-lg transition ${
               isSelected
-                ? 'bg-purple-950 border-white text-white scale-105'
+                ? 'bg-purple-950 border-white text-white'
                 : 'bg-slate-950/90 border-purple-500/50 text-slate-100 hover:border-purple-300'
             }`}
           >
-            <div className="text-[10px] font-mono font-bold text-purple-300">
-              {site.flag} {site.code} ({site.tier})
+            <div className="text-[9.5px] font-mono font-bold text-purple-300">
+              {site.flag} {site.code} • {site.type === 'colocation' ? 'Colo Hub' : 'Campus'}
             </div>
-            <div className="text-[9px] font-mono text-slate-300">{site.location}</div>
+            {showFullDetails && (
+              <div className="text-[8.5px] font-mono text-slate-300">{site.location}</div>
+            )}
           </div>
         </Html>
       )}
@@ -727,8 +751,14 @@ export default function MultiDevice3DTopologyScene({
   const controlsRef = useRef();
   const [cameraPreset, setCameraPreset] = useState('blueprint-iso');
   const [focusTarget, setFocusTarget] = useState(null);
-  const [showBadges, setShowBadges] = useState(true);
-  const [showLinkBadges, setShowLinkBadges] = useState(true);
+  // 4 Label Display Modes:
+  // 'hover'    (Hover / Selected Only — 100% unobstructed 3D hardware & animated conduits!)
+  // 'switches' (Core & Switches Only — default clean mode; APs & Colos appear on hover/click)
+  // 'compact'  (Minimal 1-line Hostname tags on all devices)
+  // 'all'      (All 2-line device details visible simultaneously)
+  const [labelMode, setLabelMode] = useState('hover');
+  const [showLinkBadges, setShowLinkBadges] = useState(false);
+  const [showZoneTitles, setShowZoneTitles] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState('interconnects'); // 'interconnects' | 'hardware' | 'clusters'
   const [searchFilter, setSearchFilter] = useState('');
@@ -1036,31 +1066,58 @@ export default function MultiDevice3DTopologyScene({
           ))}
         </div>
 
-        {/* Right Controls: Badges Toggle + Single-Switch 3D Jump + Collapsible Drawer Toggle */}
+        {/* Right Controls: 4-Mode Label Display Selector + Trunk/Zone Toggles + Drawer Toggle */}
         <div className="flex flex-wrap items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setShowBadges(!showBadges)}
-            className={`px-2 py-1 rounded-md text-[11px] font-mono border cursor-pointer transition flex items-center gap-1 ${
-              showBadges
-                ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800'
-            }`}
-          >
-            {showBadges ? <Eye className="w-3 h-3" /> : <EyeOff className="w-3 h-3" />}
-            Device Badges
-          </button>
+          {/* 4-Mode Label Display Selector */}
+          <div className="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+            <span className="text-[10px] font-mono text-slate-400 px-2 flex items-center gap-1">
+              <Eye className="w-3 h-3 text-emerald-400" /> Labels:
+            </span>
+            {[
+              { id: 'hover', label: 'Hover / Click Only' },
+              { id: 'switches', label: 'Switches Only' },
+              { id: 'compact', label: 'Compact Names' },
+              { id: 'all', label: 'All Details' }
+            ].map((m) => (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => setLabelMode(m.id)}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold cursor-pointer transition ${
+                  labelMode === m.id
+                    ? 'bg-emerald-500 text-slate-950 font-bold shadow'
+                    : 'text-slate-300 hover:text-white'
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
 
           <button
             type="button"
             onClick={() => setShowLinkBadges(!showLinkBadges)}
-            className={`px-2 py-1 rounded-md text-[11px] font-mono border cursor-pointer transition flex items-center gap-1 ${
+            className={`px-2 py-1 rounded-md text-[10px] font-mono border cursor-pointer transition ${
               showLinkBadges
-                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40'
-                : 'bg-slate-900 text-slate-400 border-slate-800'
+                ? 'bg-sky-500/20 text-sky-300 border-sky-500/40 font-bold'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
             }`}
+            title="Toggle Trunk Link Callouts (Hover always shows link details)"
           >
-            Trunk Callouts
+            Trunks: {showLinkBadges ? 'On' : 'Hover'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setShowZoneTitles(!showZoneTitles)}
+            className={`px-2 py-1 rounded-md text-[10px] font-mono border cursor-pointer transition ${
+              showZoneTitles
+                ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-bold'
+                : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle Zone Floor Titles"
+          >
+            Zones: {showZoneTitles ? 'On' : 'Off'}
           </button>
 
           {onSwitchToSingleChassis3D && (
@@ -1071,7 +1128,7 @@ export default function MultiDevice3DTopologyScene({
               title="Inspect the active switch's internal PCB, fans, PSUs & 24/48-port close-up"
             >
               <Box className="w-3.5 h-3.5" />
-              Single Chassis 3D / PCB
+              Single Chassis 3D
             </button>
           )}
 
@@ -1085,7 +1142,7 @@ export default function MultiDevice3DTopologyScene({
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            {isDrawerOpen ? 'Hide Inspector Drawer ▶' : '◀ Open Inspector Drawer'}
+            {isDrawerOpen ? 'Hide Drawer ▶' : '◀ Inspector'}
           </button>
         </div>
       </div>
@@ -1151,6 +1208,7 @@ export default function MultiDevice3DTopologyScene({
               rimColor="#fb923c"
               title="ZONE 1 • TIER 1 CAMPUS CORE (METRO)"
               subtitle="Cisco C9606R Modular Core • Dual 25G SFP28 Fiber Trunks"
+              showZoneTitles={showZoneTitles}
             />
 
             <CoreChassis9606R3D
@@ -1158,7 +1216,7 @@ export default function MultiDevice3DTopologyScene({
               position={positions.corePos}
               isSelected={activeEntity?.id === coreNode.id}
               onSelect={handleSelectEntity}
-              showBadges={showBadges}
+              labelMode={labelMode}
             />
 
             {/* ===============================================================
@@ -1172,6 +1230,7 @@ export default function MultiDevice3DTopologyScene({
               rimColor="#10b981"
               title="ZONE 2 • BANCROFT HALL SWITCH FABRIC (2× POLLED C9300-24UX)"
               subtitle="Verified 10G Trunk: Te1/0/20 ↔ Te1/0/24 (VLAN 133 Native)"
+              showZoneTitles={showZoneTitles}
             />
 
             {wlNode && (
@@ -1181,7 +1240,7 @@ export default function MultiDevice3DTopologyScene({
                 isSelected={activeEntity?.id === wlNode.id}
                 isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
                 onSelect={handleSelectEntity}
-                showBadges={showBadges}
+                labelMode={labelMode}
               />
             )}
 
@@ -1192,7 +1251,7 @@ export default function MultiDevice3DTopologyScene({
                 isSelected={activeEntity?.id === workStudyNode.id}
                 isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
                 onSelect={handleSelectEntity}
-                showBadges={showBadges}
+                labelMode={labelMode}
               />
             )}
 
@@ -1209,7 +1268,7 @@ export default function MultiDevice3DTopologyScene({
                   isSelected={activeEntity?.id === sw.id}
                   isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
                   onSelect={handleSelectEntity}
-                  showBadges={showBadges}
+                  labelMode={labelMode}
                 />
               );
             })}
@@ -1224,6 +1283,7 @@ export default function MultiDevice3DTopologyScene({
               rimColor="#38bdf8"
               title="ZONE 3 • WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
               subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
+              showZoneTitles={showZoneTitles}
             />
 
             {positions.apPositions.map(({ ap, pos }) => (
@@ -1233,7 +1293,7 @@ export default function MultiDevice3DTopologyScene({
                 position={pos}
                 isSelected={activeEntity?.id === ap.hostname}
                 onSelect={handleSelectEntity}
-                showBadges={showBadges}
+                labelMode={labelMode}
               />
             ))}
 
@@ -1248,6 +1308,7 @@ export default function MultiDevice3DTopologyScene({
               rimColor="#a855f7"
               title="ZONE 4 • COLOCATIONS & MULTI-CAMPUS WAN (US & CANADA)"
               subtitle="Halsey165 (US) • Hastings (CA) • Florham • VancOakridge"
+              showZoneTitles={showZoneTitles}
             />
 
             {positions.coloSites.map(({ site, pos }) => (
@@ -1257,7 +1318,7 @@ export default function MultiDevice3DTopologyScene({
                 position={pos}
                 isSelected={activeEntity?.id === site.code}
                 onSelect={handleSelectEntity}
-                showBadges={showBadges}
+                labelMode={labelMode}
               />
             ))}
 
