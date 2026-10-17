@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   Download,
   ZoomIn,
@@ -11,17 +11,92 @@ import {
   Layers,
   Globe,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Move,
+  ArrowUpDown,
+  Save
 } from 'lucide-react';
+
+const LAYOUT_STORAGE_KEY = 'fdu_iso_blueprint_layout_v1';
+const API_LAYOUT_ENDPOINT = '/api/topology/layouts/isometric_blueprint_v1';
+
+/**
+ * Default coordinates for all Isometric Square Bases (Zone Pads) and relative device offsets
+ * Devices store (dx, dy) relative to their parent square base so:
+ * 1) Dragging a square base moves the base AND all of its devices together.
+ * 2) Dragging an individual device moves it freely while clamping it within/near its square base.
+ */
+const DEFAULT_BLUEPRINT_LAYOUT = {
+  pads: {
+    // Campus Detail Scope Pads
+    corePad: { cx: 280, cy: 225, w: 360, h: 155 },
+    switchPad: { cx: 425, cy: 515, w: 660, h: 295 },
+    apPad: { cx: 1125, cy: 310, w: 480, h: 260 },
+    coloPad: { cx: 1125, cy: 590, w: 460, h: 190 },
+    // Multi-Country Scope Pads
+    halseyPad: { cx: 415, cy: 245, w: 390, h: 165 },
+    metroPad: { cx: 245, cy: 525, w: 340, h: 185 },
+    florhamPad: { cx: 585, cy: 525, w: 340, h: 185 },
+    hastingsPad: { cx: 1115, cy: 245, w: 380, h: 165 },
+    vancPad: { cx: 1115, cy: 525, w: 380, h: 185 }
+  },
+  devices: {
+    // Relative to corePad (280, 225)
+    coreNode: { dx: 0, dy: -10, padId: 'corePad', maxDx: 155, maxDy: 78 },
+    // Relative to switchPad (425, 515)
+    mdfNode: { dx: 140, dy: -65, padId: 'switchPad', maxDx: 285, maxDy: 135 },
+    idfNode: { dx: -220, dy: 40, padId: 'switchPad', maxDx: 285, maxDy: 135 },
+    // 7 APs relative to apPad (1125, 310)
+    'ap-0': { dx: -220, dy: -115, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-1': { dx: 20, dy: -115, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-2': { dx: -220, dy: -59, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-3': { dx: 20, dy: -59, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-4': { dx: -220, dy: -3, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-5': { dx: 20, dy: -3, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    'ap-6': { dx: -220, dy: 53, padId: 'apPad', maxDx: 255, maxDy: 145 },
+    // Relative to coloPad (1125, 590)
+    halseyColo: { dx: -155, dy: -25, padId: 'coloPad', maxDx: 215, maxDy: 92 },
+    hastingsColo: { dx: 100, dy: -25, padId: 'coloPad', maxDx: 215, maxDy: 92 },
+    // Multi-Country Nodes relative to their pads
+    globalHalsey: { dx: 0, dy: -15, padId: 'halseyPad', maxDx: 165, maxDy: 80 },
+    globalMetro: { dx: 0, dy: -10, padId: 'metroPad', maxDx: 155, maxDy: 85 },
+    globalFlorham: { dx: 0, dy: -10, padId: 'florhamPad', maxDx: 155, maxDy: 85 },
+    globalHastings: { dx: 0, dy: -15, padId: 'hastingsPad', maxDx: 165, maxDy: 80 },
+    globalVanc: { dx: 0, dy: -10, padId: 'vancPad', maxDx: 165, maxDy: 85 }
+  }
+};
+
+function mergeWithDefaultLayout(saved) {
+  if (!saved || typeof saved !== 'object') return structuredClone(DEFAULT_BLUEPRINT_LAYOUT);
+  const merged = structuredClone(DEFAULT_BLUEPRINT_LAYOUT);
+  if (saved.pads && typeof saved.pads === 'object') {
+    for (const [k, v] of Object.entries(saved.pads)) {
+      if (merged.pads[k] && typeof v?.cx === 'number' && typeof v?.cy === 'number') {
+        merged.pads[k] = { ...merged.pads[k], cx: v.cx, cy: v.cy };
+      }
+    }
+  }
+  if (saved.devices && typeof saved.devices === 'object') {
+    for (const [k, v] of Object.entries(saved.devices)) {
+      if (merged.devices[k] && typeof v?.dx === 'number' && typeof v?.dy === 'number') {
+        merged.devices[k] = { ...merged.devices[k], dx: v.dx, dy: v.dy };
+      }
+    }
+  }
+  return merged;
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
 
 /**
  * Isometric 3D Engineering Blueprint Network Topology Renderer
- * Styled after technical corporate network architecture blueprints:
- * - Outer drafting ruler border (0', 10', 20' ... 80') & blueprint grid
- * - Deep navy dashed-border regional containers with PCB circuit traces
- * - Isometric 3D glowing zone pads (Green/Cyan LAN, Orange Core/Perimeter, Purple Colocation/WAN, Gold Security/ISP)
- * - Isometric 3D Core Chassis Towers, 3D Switches (with top 4-way switching arrows), 3D Wireless APs, and 3D Cloud/ISP nodes
- * - Glowing neon multi-path conduits with directional flow arrows and inline interface/VLAN labels
+ * - Supports interactive drag-and-drop repositioning of both:
+ *   1) Isometric Square Zone Bases (dragging a base moves the base + all devices on it)
+ *   2) Individual 3D Devices (clamped so each device stays within or near its parent square base)
+ * - Conduits & callout pills dynamically recalculate in real time
+ * - Automatically persists layout coordinates to PostgreSQL + localStorage
  */
 export default function IsometricBlueprintView({
   globalGraph,
@@ -32,8 +107,236 @@ export default function IsometricBlueprintView({
   const svgRef = useRef(null);
   const [zoom, setZoom] = useState(1);
   const [selectedNodeKey, setSelectedNodeKey] = useState(null);
+  const [hoveredDeviceInfo, setHoveredDeviceInfo] = useState(null);
   const [blueprintScope, setBlueprintScope] = useState('campus-detail'); // 'campus-detail' | 'multi-country'
   const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(false);
+
+  // Layout state (initialized from localStorage, then synced with PostgreSQL backend)
+  const [layout, setLayout] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (raw) return mergeWithDefaultLayout(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
+    return structuredClone(DEFAULT_BLUEPRINT_LAYOUT);
+  });
+
+  const [saveStatus, setSaveStatus] = useState('Saved'); // 'Saved' | 'Saving...' | 'Custom Saved ✓'
+  const [activeDrag, setActiveDrag] = useState(null);
+  // activeDrag: { kind: 'pad' | 'device', id: string, padId?: string, startSvgX, startSvgY, origX, origY, moved: boolean }
+  const dragRef = useRef(null);
+
+  // Load saved layout from PostgreSQL on mount
+  useEffect(() => {
+    let cancelled = false;
+    fetch(API_LAYOUT_ENDPOINT)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (!cancelled && res?.layoutData && Object.keys(res.layoutData).length > 0) {
+          const merged = mergeWithDefaultLayout(res.layoutData);
+          setLayout(merged);
+          try {
+            localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Persist layout to localStorage + PostgreSQL
+  const persistLayout = useCallback((nextLayout) => {
+    setSaveStatus('Saving...');
+    try {
+      localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(nextLayout));
+    } catch {
+      // ignore
+    }
+    fetch(API_LAYOUT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layoutData: nextLayout })
+    })
+      .then(() => setSaveStatus('Saved in SQL ✓'))
+      .catch(() => setSaveStatus('Saved Locally ✓'));
+  }, []);
+
+  // Convert client (mouse) coordinates into SVG viewBox (1440x820) coordinates
+  const clientToSvgPoint = useCallback((clientX, clientY) => {
+    const svg = svgRef.current;
+    if (!svg) return { x: clientX, y: clientY };
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const ctm = svg.getScreenCTM();
+    if (!ctm) return { x: clientX, y: clientY };
+    const transformed = pt.matrixTransform(ctm.inverse());
+    return { x: transformed.x, y: transformed.y };
+  }, []);
+
+  // Begin dragging a Square Base (Zone Pad)
+  const handleStartPadDrag = (e, padId) => {
+    e.stopPropagation();
+    const pad = layout.pads[padId];
+    if (!pad) return;
+    const svgPt = clientToSvgPoint(e.clientX, e.clientY);
+    const dragInfo = {
+      kind: 'pad',
+      id: padId,
+      startSvgX: svgPt.x,
+      startSvgY: svgPt.y,
+      origX: pad.cx,
+      origY: pad.cy,
+      moved: false
+    };
+    dragRef.current = dragInfo;
+    setActiveDrag(dragInfo);
+  };
+
+  // Begin dragging an individual 3D Device (clamped near its parent Square Base)
+  const handleStartDeviceDrag = (e, deviceId, onClickCallback) => {
+    e.stopPropagation();
+    const dev = layout.devices[deviceId];
+    if (!dev) return;
+    const svgPt = clientToSvgPoint(e.clientX, e.clientY);
+    const dragInfo = {
+      kind: 'device',
+      id: deviceId,
+      padId: dev.padId,
+      startSvgX: svgPt.x,
+      startSvgY: svgPt.y,
+      origX: dev.dx,
+      origY: dev.dy,
+      moved: false,
+      onClickCallback
+    };
+    dragRef.current = dragInfo;
+    setActiveDrag(dragInfo);
+  };
+
+  // Global window pointer move & pointer up handlers for smooth 60fps dragging
+  useEffect(() => {
+    if (!activeDrag) return;
+
+    const handlePointerMove = (e) => {
+      const current = dragRef.current;
+      if (!current) return;
+      const svgPt = clientToSvgPoint(e.clientX, e.clientY);
+      const deltaX = svgPt.x - current.startSvgX;
+      const deltaY = svgPt.y - current.startSvgY;
+
+      if (Math.hypot(deltaX, deltaY) > 3.5) {
+        current.moved = true;
+      }
+
+      if (current.kind === 'pad') {
+        const nextCx = Math.round(clamp(current.origX + deltaX, 140, 1300));
+        const nextCy = Math.round(clamp(current.origY + deltaY, 150, 665));
+        setLayout((prev) => ({
+          ...prev,
+          pads: {
+            ...prev.pads,
+            [current.id]: {
+              ...prev.pads[current.id],
+              cx: nextCx,
+              cy: nextCy
+            }
+          }
+        }));
+      } else if (current.kind === 'device') {
+        const spec = DEFAULT_BLUEPRINT_LAYOUT.devices[current.id] || {
+          maxDx: 220,
+          maxDy: 120
+        };
+        const nextDx = Math.round(
+          clamp(current.origX + deltaX, -spec.maxDx, spec.maxDx)
+        );
+        const nextDy = Math.round(
+          clamp(current.origY + deltaY, -spec.maxDy, spec.maxDy)
+        );
+        setLayout((prev) => ({
+          ...prev,
+          devices: {
+            ...prev.devices,
+            [current.id]: {
+              ...prev.devices[current.id],
+              dx: nextDx,
+              dy: nextDy
+            }
+          }
+        }));
+      }
+    };
+
+    const handlePointerUp = () => {
+      const current = dragRef.current;
+      dragRef.current = null;
+      setActiveDrag(null);
+      if (!current) return;
+
+      if (!current.moved && current.kind === 'device' && current.onClickCallback) {
+        current.onClickCallback();
+      } else if (current.moved) {
+        setLayout((latest) => {
+          persistLayout(latest);
+          return latest;
+        });
+      }
+    };
+
+    window.addEventListener('pointermove', handlePointerMove);
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => {
+      window.removeEventListener('pointermove', handlePointerMove);
+      window.removeEventListener('pointerup', handlePointerUp);
+    };
+  }, [activeDrag, clientToSvgPoint, persistLayout]);
+
+  // 1-Click Helper: Swap the Purplish Colocation Base (move UP) and Cyan Access Point Base (move DOWN)
+  const handleSwapColoAndApBases = () => {
+    setLayout((prev) => {
+      const currentApCy = prev.pads.apPad.cy;
+      const currentColoCy = prev.pads.coloPad.cy;
+      const isDefaultOrder = currentApCy < currentColoCy;
+      const nextLayout = {
+        ...prev,
+        pads: {
+          ...prev.pads,
+          coloPad: {
+            ...prev.pads.coloPad,
+            cx: prev.pads.coloPad.cx,
+            cy: isDefaultOrder ? 235 : 590
+          },
+          apPad: {
+            ...prev.pads.apPad,
+            cx: prev.pads.apPad.cx,
+            cy: isDefaultOrder ? 510 : 310
+          }
+        }
+      };
+      persistLayout(nextLayout);
+      return nextLayout;
+    });
+  };
+
+  // Reset all bases & devices back to factory default positions
+  const handleResetLayout = () => {
+    const fresh = structuredClone(DEFAULT_BLUEPRINT_LAYOUT);
+    setLayout(fresh);
+    try {
+      localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    fetch(API_LAYOUT_ENDPOINT, { method: 'DELETE' })
+      .then(() => setSaveStatus('Reset to Default'))
+      .catch(() => setSaveStatus('Reset to Default'));
+  };
 
   const switchNodes = globalGraph?.switchNodes || [];
   const switchLinks = globalGraph?.switchLinks || [];
@@ -98,6 +401,26 @@ export default function IsometricBlueprintView({
       (l.sourceKey === idfNode.key && l.targetKey === mdfNode.key)
   );
 
+  // Compute live world coordinates for each pad and each device
+  const getDeviceWorldPos = (deviceId) => {
+    const dev = layout.devices[deviceId] || DEFAULT_BLUEPRINT_LAYOUT.devices[deviceId];
+    const pad = layout.pads[dev.padId] || DEFAULT_BLUEPRINT_LAYOUT.pads[dev.padId];
+    return {
+      x: pad.cx + dev.dx,
+      y: pad.cy + dev.dy,
+      pad
+    };
+  };
+
+  const coreWorld = getDeviceWorldPos('coreNode');
+  const mdfWorld = getDeviceWorldPos('mdfNode');
+  const idfWorld = getDeviceWorldPos('idfNode');
+  const halseyColoWorld = getDeviceWorldPos('halseyColo');
+  const hastingsColoWorld = getDeviceWorldPos('hastingsColo');
+
+  const apPad = layout.pads.apPad;
+  const coloPad = layout.pads.coloPad;
+
   // Export SVG blueprint to a high-resolution PNG file
   const handleExportBlueprintPng = () => {
     if (!svgRef.current) return;
@@ -129,12 +452,9 @@ export default function IsometricBlueprintView({
     img.src = url;
   };
 
-  // Helper to draw an Isometric 3D Rounded Zone Pad (parallelogram in 2.5D projection)
+  // Helper to draw a Draggable Isometric 3D Rounded Zone Pad (Square Base in 2.5D projection)
   const renderIsometricZonePad = ({
-    cx,
-    cy,
-    w,
-    h,
+    padId,
     fill,
     stroke,
     glowId,
@@ -142,24 +462,71 @@ export default function IsometricBlueprintView({
     sublabel,
     labelColor = '#ffffff'
   }) => {
+    const pad = layout.pads[padId] || DEFAULT_BLUEPRINT_LAYOUT.pads[padId];
+    const { cx, cy, w, h } = pad;
     const hw = w / 2;
     const hh = h / 2;
     const pts = `${cx},${cy - hh} ${cx + hw},${cy} ${cx},${cy + hh} ${cx - hw},${cy}`;
     const depth = 8;
     const sidePts = `${cx - hw},${cy} ${cx},${cy + hh} ${cx + hw},${cy} ${cx + hw},${cy + depth} ${cx},${cy + hh + depth} ${cx - hw},${cy + depth}`;
 
+    const isDraggingThisPad = activeDrag?.kind === 'pad' && activeDrag?.id === padId;
+    const isParentOfDraggedDevice =
+      activeDrag?.kind === 'device' && activeDrag?.padId === padId;
+
     return (
-      <g>
+      <g
+        onPointerDown={(e) => handleStartPadDrag(e, padId)}
+        style={{ cursor: isDraggingThisPad ? 'grabbing' : 'grab' }}
+      >
+        {/* Subtle boundary tether halo when a child device inside this base is being dragged */}
+        {(isDraggingThisPad || isParentOfDraggedDevice) && (
+          <polygon
+            points={`${cx},${cy - hh - 10} ${cx + hw + 14},${cy} ${cx},${cy + hh + 14} ${cx - hw - 14},${cy}`}
+            fill="none"
+            stroke="#ffffff"
+            strokeWidth="2"
+            strokeDasharray="6 4"
+          />
+        )}
+
         <polygon points={sidePts} fill={stroke} fillOpacity="0.35" />
         <polygon
           points={pts}
           fill={fill}
-          fillOpacity="0.28"
-          stroke={stroke}
-          strokeWidth="2.5"
+          fillOpacity={isDraggingThisPad ? '0.42' : '0.28'}
+          stroke={isDraggingThisPad ? '#ffffff' : stroke}
+          strokeWidth={isDraggingThisPad ? '3.2' : '2.5'}
           filter={glowId ? `url(#${glowId})` : undefined}
           strokeLinejoin="round"
         />
+
+        {/* Drag Handle Grip Pill on Top Corner of Square Base */}
+        <g transform={`translate(${cx}, ${cy - hh + 14})`}>
+          <rect
+            x="-46"
+            y="-9"
+            width="92"
+            height="16"
+            rx="4"
+            fill="#020617"
+            fillOpacity="0.78"
+            stroke={stroke}
+            strokeWidth="1"
+          />
+          <text
+            x="0"
+            y="2"
+            textAnchor="middle"
+            fill={labelColor}
+            fontSize="8"
+            fontWeight="800"
+            fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
+          >
+            ✥ DRAG BASE
+          </text>
+        </g>
+
         {label && (
           <text
             x={cx - hw * 0.48}
@@ -191,10 +558,9 @@ export default function IsometricBlueprintView({
     );
   };
 
-  // Helper to draw a 3D Isometric Cisco Catalyst 9300 Switch Box with 4-way switching arrows & port LEDs
+  // Helper to draw a Draggable 3D Isometric Cisco Catalyst 9300 Switch Box
   const renderIsometric3DSwitch = ({
-    x,
-    y,
+    deviceId,
     scale = 1,
     title,
     subtitle,
@@ -208,24 +574,50 @@ export default function IsometricBlueprintView({
     accentColor = '#38bdf8',
     onClick
   }) => {
+    const { x, y } = getDeviceWorldPos(deviceId);
     const isSelected = selectedNodeKey === title;
+    const isDraggingThis = activeDrag?.kind === 'device' && activeDrag?.id === deviceId;
+
     return (
       <g
         transform={`translate(${x}, ${y}) scale(${scale})`}
-        onClick={onClick}
-        style={{ cursor: 'pointer' }}
+        onPointerDown={(e) =>
+          handleStartDeviceDrag(e, deviceId, () => {
+            setSelectedNodeKey(title);
+            setHoveredDeviceInfo({
+              title,
+              model,
+              ip,
+              serial,
+              subtitle: `IOS-XE ${subtitle}`,
+              extra: `${poeText || ''} ${portSummary ? `• ${portSummary}` : ''}`
+            });
+            if (onClick) onClick();
+          })
+        }
+        onMouseEnter={() =>
+          setHoveredDeviceInfo({
+            title,
+            model,
+            ip,
+            serial,
+            subtitle: `IOS-XE ${subtitle}`,
+            extra: `${poeText || ''} ${portSummary ? `• ${portSummary}` : ''}`
+          })
+        }
+        style={{ cursor: isDraggingThis ? 'grabbing' : 'grab' }}
       >
         {/* Selection / Active Halo */}
-        {(isActive3D || isSelected) && (
+        {(isActive3D || isSelected || isDraggingThis) && (
           <ellipse
             cx="0"
             cy="8"
             rx="72"
             ry="38"
             fill={accentColor}
-            fillOpacity="0.18"
-            stroke={accentColor}
-            strokeWidth="2"
+            fillOpacity="0.22"
+            stroke={isDraggingThis ? '#ffffff' : accentColor}
+            strokeWidth="2.2"
             strokeDasharray="5 3"
           />
         )}
@@ -303,7 +695,15 @@ export default function IsometricBlueprintView({
             rx="7"
             fill="#061024"
             fillOpacity="0.94"
-            stroke={isActive3D ? '#38bdf8' : isPolled ? '#10b981' : '#a855f7'}
+            stroke={
+              isDraggingThis
+                ? '#ffffff'
+                : isActive3D
+                ? '#38bdf8'
+                : isPolled
+                ? '#10b981'
+                : '#a855f7'
+            }
             strokeWidth="1.8"
           />
           <text
@@ -356,21 +756,46 @@ export default function IsometricBlueprintView({
     );
   };
 
-  // Helper to draw a 3D Isometric Core Chassis Tower (e.g. Cisco C9606R Core Switch)
+  // Helper to draw a Draggable 3D Isometric Core Chassis Tower (e.g. Cisco C9606R Core Switch)
   const renderIsometric3DCoreTower = ({
-    x,
-    y,
+    deviceId,
     hostname,
     model,
     ip,
     statusLabel,
     onClick
   }) => {
+    const { x, y } = getDeviceWorldPos(deviceId);
+    const isDraggingThis = activeDrag?.kind === 'device' && activeDrag?.id === deviceId;
+
     return (
       <g
         transform={`translate(${x}, ${y})`}
-        onClick={onClick}
-        style={{ cursor: 'pointer' }}
+        onPointerDown={(e) =>
+          handleStartDeviceDrag(e, deviceId, () => {
+            setSelectedNodeKey(hostname);
+            setHoveredDeviceInfo({
+              title: hostname,
+              model: `Cisco ${model} Modular Core`,
+              ip,
+              serial: 'CORE-CHASSIS',
+              subtitle: 'Tier 1 Backbone',
+              extra: statusLabel
+            });
+            if (onClick) onClick();
+          })
+        }
+        onMouseEnter={() =>
+          setHoveredDeviceInfo({
+            title: hostname,
+            model: `Cisco ${model} Modular Core`,
+            ip,
+            serial: 'CORE-CHASSIS',
+            subtitle: 'Tier 1 Backbone',
+            extra: statusLabel
+          })
+        }
+        style={{ cursor: isDraggingThis ? 'grabbing' : 'grab' }}
       >
         {/* Glowing Base Pad */}
         <ellipse
@@ -379,27 +804,24 @@ export default function IsometricBlueprintView({
           rx="58"
           ry="28"
           fill="#f97316"
-          fillOpacity="0.2"
-          stroke="#fb923c"
+          fillOpacity="0.24"
+          stroke={isDraggingThis ? '#ffffff' : '#fb923c'}
           strokeWidth="2"
         />
 
         {/* Isometric Tall Modular Chassis (C9606R 6-Slot Core) */}
-        {/* Top Face */}
         <polygon
           points="0,-52 44,-30 0,-8 -44,-30"
           fill="#334155"
           stroke="#cbd5e1"
           strokeWidth="1.5"
         />
-        {/* Left Front Linecards Face */}
         <polygon
           points="-44,-30 0,-8 0,34 -44,12"
           fill="#1e293b"
           stroke="#94a3b8"
           strokeWidth="1.5"
         />
-        {/* Right Chassis Face */}
         <polygon
           points="0,-8 44,-30 44,12 0,34"
           fill="#0f172a"
@@ -418,12 +840,7 @@ export default function IsometricBlueprintView({
               stroke={idx === 2 || idx === 3 ? '#f59e0b' : '#38bdf8'}
               strokeWidth="2"
             />
-            <circle
-              cx="-8"
-              cy={ly - 1}
-              r="1.8"
-              fill="#34d399"
-            />
+            <circle cx="-8" cy={ly - 1} r="1.8" fill="#34d399" />
           </g>
         ))}
 
@@ -459,7 +876,7 @@ export default function IsometricBlueprintView({
             rx="7"
             fill="#090d1c"
             fillOpacity="0.95"
-            stroke="#fb923c"
+            stroke={isDraggingThis ? '#ffffff' : '#fb923c'}
             strokeWidth="1.8"
           />
           <text
@@ -499,24 +916,54 @@ export default function IsometricBlueprintView({
     );
   };
 
-  // Helper to draw a 3D Isometric Catalyst Wi-Fi 6 Access Point Node
+  // Helper to draw a Draggable 3D Isometric Catalyst Wi-Fi 6 Access Point Node
   const renderIsometric3DApNode = ({
-    x,
-    y,
+    deviceId,
     hostname,
     ip,
     model,
     localPort,
     poeWatts
   }) => {
+    const { x, y } = getDeviceWorldPos(deviceId);
+    const isDraggingThis = activeDrag?.kind === 'device' && activeDrag?.id === deviceId;
+    const isSelected = selectedNodeKey === hostname;
+
     return (
-      <g transform={`translate(${x}, ${y})`}>
+      <g
+        key={deviceId}
+        transform={`translate(${x}, ${y})`}
+        onPointerDown={(e) =>
+          handleStartDeviceDrag(e, deviceId, () => {
+            setSelectedNodeKey(hostname);
+            setHoveredDeviceInfo({
+              title: hostname,
+              model,
+              ip,
+              serial: `Port ${localPort}`,
+              subtitle: 'Wi-Fi 6 UPOE AP',
+              extra: `Connected to ${mdfNode.hostname} [${localPort}] • ⚡ ${poeWatts ? `${poeWatts.toFixed(0)}W` : '30W'}`
+            });
+          })
+        }
+        onMouseEnter={() =>
+          setHoveredDeviceInfo({
+            title: hostname,
+            model,
+            ip,
+            serial: `Port ${localPort}`,
+            subtitle: 'Wi-Fi 6 UPOE AP',
+            extra: `Connected to ${mdfNode.hostname} [${localPort}] • ⚡ ${poeWatts ? `${poeWatts.toFixed(0)}W` : '30W'}`
+          })
+        }
+        style={{ cursor: isDraggingThis ? 'grabbing' : 'grab' }}
+      >
         {/* Isometric AP Puck / Box */}
         <polygon
           points="0,-13 26,0 0,13 -26,0"
           fill="#0ea5e9"
-          fillOpacity="0.35"
-          stroke="#7dd3fc"
+          fillOpacity={isDraggingThis || isSelected ? '0.65' : '0.35'}
+          stroke={isDraggingThis || isSelected ? '#ffffff' : '#7dd3fc'}
           strokeWidth="1.5"
         />
         <polygon
@@ -550,8 +997,8 @@ export default function IsometricBlueprintView({
             rx="5"
             fill="#041122"
             fillOpacity="0.92"
-            stroke="#0284c7"
-            strokeWidth="1.2"
+            stroke={isDraggingThis || isSelected ? '#ffffff' : '#0284c7'}
+            strokeWidth="1.3"
           />
           <text
             x="7"
@@ -577,6 +1024,27 @@ export default function IsometricBlueprintView({
     );
   };
 
+  // Dynamic Conduit Path Calculations for Campus Detail Scope
+  const fiberMidX = Math.round((coreWorld.x + mdfWorld.x) / 2);
+  const fiberMidY = Math.round((coreWorld.y + mdfWorld.y) / 2);
+
+  const trunkMidX = Math.round((mdfWorld.x + idfWorld.x) / 2);
+  const trunkMidY = Math.round((mdfWorld.y + idfWorld.y) / 2);
+
+  // Cyan PoE Conduit from T-BAN-2FL-WL to Cyan AP Pad
+  const poeStartX = mdfWorld.x + 42;
+  const poeStartY = mdfWorld.y - 5;
+  const poeEndX = apPad.cx - apPad.w / 2 + 40;
+  const poeEndY = apPad.cy - 15;
+  const poeTurnX = Math.round((poeStartX + poeEndX) / 2 + 25);
+
+  // Purple Dark Fiber Conduit from tcore-9600 to Purplish Colocation Pad
+  const coloStartX = coreWorld.x + 52;
+  const coloStartY = coreWorld.y - 10;
+  const coloEndX = coloPad.cx - coloPad.w / 2 + 35;
+  const coloEndY = coloPad.cy - 5;
+  const coloTurnX = Math.round((coloStartX + coloEndX) / 2 - 20);
+
   return (
     <div className="w-full flex-1 min-h-0 flex flex-col bg-[#060c1a] overflow-hidden">
       {/* Blueprint Control Header */}
@@ -584,7 +1052,7 @@ export default function IsometricBlueprintView({
         <div className="flex flex-wrap items-center gap-2">
           <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/40 font-mono font-bold flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            Isometric 3D Engineering Blueprint
+            Isometric 3D Blueprint
           </span>
 
           {/* Scope Switcher */}
@@ -611,12 +1079,46 @@ export default function IsometricBlueprintView({
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
-              US & Canada Campuses + Colos (Metro / Florham / Halsey165 / Hastings)
+              US &amp; Canada Campuses + Colos
             </button>
           </div>
+
+          {/* Drag & Save Quick Controls */}
+          <button
+            type="button"
+            onClick={handleSwapColoAndApBases}
+            className="px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/50 font-mono font-bold text-[11px] flex items-center gap-1.5 cursor-pointer transition"
+            title="Move the Purplish Colocation Base upward across from Core and move the Cyan Access Point Base downward across from T-BAN-2FL-WL"
+          >
+            <ArrowUpDown className="w-3.5 h-3.5 text-purple-300" />
+            Swap Colo ▲ / AP ▼ Bases
+          </button>
+
+          <button
+            type="button"
+            onClick={handleResetLayout}
+            className="px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[11px] flex items-center gap-1 cursor-pointer transition"
+            title="Reset all dragged bases and devices back to default positions"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset Layout
+          </button>
+
+          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] flex items-center gap-1">
+            <Save className="w-3 h-3" />
+            {saveStatus} • Drag any Square Base or Device
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5">
+          {hoveredDeviceInfo && (
+            <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-900 border border-sky-500/40 font-mono text-[11px]">
+              <span className="text-white font-bold">{hoveredDeviceInfo.title}</span>
+              <span className="text-sky-300">{hoveredDeviceInfo.model}</span>
+              <span className="text-emerald-300">{hoveredDeviceInfo.ip}</span>
+            </div>
+          )}
+
           <button
             type="button"
             onClick={() => setZoom((z) => Math.max(0.75, +(z - 0.1).toFixed(2)))}
@@ -651,7 +1153,7 @@ export default function IsometricBlueprintView({
             className="ml-1 px-3 py-1.5 rounded-lg bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-mono font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer"
           >
             <Download className="w-3.5 h-3.5" />
-            Export Slide PNG (2560×1440)
+            Export Slide PNG
           </button>
         </div>
       </div>
@@ -663,7 +1165,7 @@ export default function IsometricBlueprintView({
           style={{
             transform: `scale(${zoom})`,
             transformOrigin: 'center center',
-            transition: 'transform 150ms ease-out'
+            transition: activeDrag ? 'none' : 'transform 150ms ease-out'
           }}
         >
           <svg
@@ -809,10 +1311,10 @@ export default function IsometricBlueprintView({
               x="42"
               y="52"
               fill="#0f294a"
-              fontSize="25"
+              fontSize="24"
               fontWeight="900"
               fontFamily="ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-              letterSpacing="0.6"
+              letterSpacing="0.5"
             >
               FDU ENTERPRISE NETWORK ARCHITECTURE:{' '}
               <tspan fontWeight="400" fill="#1e3a5f">
@@ -933,14 +1435,11 @@ export default function IsometricBlueprintView({
                 </text>
 
                 {/* =========================================================
-                    ISOMETRIC ZONE PADS INSIDE LEFT CONTAINER
+                    DRAGGABLE ISOMETRIC SQUARE BASES (ZONE PADS)
                    ========================================================= */}
-                {/* 1. Orange Zone Pad: Campus Core Backbone (tcore-9600) */}
+                {/* 1. Orange Square Base: Campus Core Backbone (tcore-9600) */}
                 {renderIsometricZonePad({
-                  cx: 280,
-                  cy: 225,
-                  w: 360,
-                  h: 155,
+                  padId: 'corePad',
                   fill: '#f97316',
                   stroke: '#fb923c',
                   glowId: 'glowOrange',
@@ -949,12 +1448,9 @@ export default function IsometricBlueprintView({
                   labelColor: '#fed7aa'
                 })}
 
-                {/* 2. Green/Cyan Zone Pad: Polled Catalyst 9300 Switch Fabric (MDF + IDF) */}
+                {/* 2. Green/Cyan Square Base: Polled Catalyst 9300 Switch Fabric (MDF + IDF) */}
                 {renderIsometricZonePad({
-                  cx: 425,
-                  cy: 515,
-                  w: 660,
-                  h: 295,
+                  padId: 'switchPad',
                   fill: '#10b981',
                   stroke: '#34d399',
                   glowId: 'glowCyan',
@@ -963,15 +1459,9 @@ export default function IsometricBlueprintView({
                   labelColor: '#a7f3d0'
                 })}
 
-                {/* =========================================================
-                    ISOMETRIC ZONE PADS INSIDE RIGHT CONTAINER
-                   ========================================================= */}
-                {/* 3. Cyan Zone Pad: 7 Connected Wi-Fi 6 Access Points */}
+                {/* 3. Cyan Square Base: 7 Connected Wi-Fi 6 Access Points */}
                 {renderIsometricZonePad({
-                  cx: 1125,
-                  cy: 310,
-                  w: 480,
-                  h: 260,
+                  padId: 'apPad',
                   fill: '#06b6d4',
                   stroke: '#22d3ee',
                   glowId: 'glowCyan',
@@ -980,12 +1470,9 @@ export default function IsometricBlueprintView({
                   labelColor: '#cffafe'
                 })}
 
-                {/* 4. Purple/Gold Zone Pad: Colocations (Halsey165 <-> Hastings) & ISP Transit */}
+                {/* 4. Purplish Square Base: Colocations (Halsey165 <-> Hastings) & ISP Transit */}
                 {renderIsometricZonePad({
-                  cx: 1125,
-                  cy: 590,
-                  w: 460,
-                  h: 190,
+                  padId: 'coloPad',
                   fill: '#a855f7',
                   stroke: '#c084fc',
                   glowId: 'glowPurple',
@@ -995,36 +1482,34 @@ export default function IsometricBlueprintView({
                 })}
 
                 {/* =========================================================
-                    GLOWING NEON DATA CONDUITS & DIRECTIONAL FLOW ARROWS
+                    DYNAMIC GLOWING NEON DATA CONDUITS (FOLLOW DRAGGED BASES & DEVICES)
                    ========================================================= */}
 
-                {/* CONDUIT A: Dual 25G Fiber Optic Uplinks between tcore-9600 (280,210) and T-BAN-2FL-WL (565,445) */}
+                {/* CONDUIT A: Dual 25G Fiber Optic Uplinks between tcore-9600 and T-BAN-2FL-WL */}
                 <g filter="url(#glowOrange)">
-                  {/* Fiber Link #1: Tw2/2/0/35 <-> Tw1/1/1 */}
                   <path
-                    d="M 305 235 L 430 330 L 540 420"
+                    d={`M ${coreWorld.x + 18} ${coreWorld.y + 18} L ${mdfWorld.x - 18} ${mdfWorld.y - 25}`}
                     fill="none"
                     stroke="#f97316"
                     strokeWidth="7"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 305 235 L 430 330 L 540 420"
+                    d={`M ${coreWorld.x + 18} ${coreWorld.y + 18} L ${mdfWorld.x - 18} ${mdfWorld.y - 25}`}
                     fill="none"
                     stroke="#ffedd5"
                     strokeWidth="2.2"
                     strokeLinecap="round"
                   />
-                  {/* Fiber Link #2: Tw1/2/0/35 <-> Tw1/1/2 */}
                   <path
-                    d="M 275 250 L 400 345 L 515 435"
+                    d={`M ${coreWorld.x - 10} ${coreWorld.y + 32} L ${mdfWorld.x - 42} ${mdfWorld.y - 12}`}
                     fill="none"
                     stroke="#38bdf8"
                     strokeWidth="7"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 275 250 L 400 345 L 515 435"
+                    d={`M ${coreWorld.x - 10} ${coreWorld.y + 32} L ${mdfWorld.x - 42} ${mdfWorld.y - 12}`}
                     fill="none"
                     stroke="#e0f2fe"
                     strokeWidth="2.2"
@@ -1032,8 +1517,8 @@ export default function IsometricBlueprintView({
                   />
                 </g>
 
-                {/* Inline Engineering Callout Badge for Dual 25G Fiber Uplinks (Positioned cleanly to the upper-right of the fiber links) */}
-                <g transform="translate(555, 295)">
+                {/* Inline Engineering Callout Badge for Dual 25G Fiber Uplinks */}
+                <g transform={`translate(${fiberMidX + 110}, ${fiberMidY - 35})`}>
                   <rect
                     x="-135"
                     y="-22"
@@ -1078,17 +1563,17 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT B: Bi-Directionally Verified 10G mGig Trunk between T-BAN-2FL-WL (565,455) and T-BAN-2FL-WorkStudy-C9300 (210,560) */}
+                {/* CONDUIT B: Bi-Directionally Verified 10G mGig Trunk between T-BAN-2FL-WL and T-BAN-2FL-WorkStudy-C9300 */}
                 <g filter="url(#glowCyan)">
                   <path
-                    d="M 545 460 L 385 520 L 220 560"
+                    d={`M ${mdfWorld.x - 20} ${mdfWorld.y + 10} L ${idfWorld.x + 15} ${idfWorld.y + 5}`}
                     fill="none"
                     stroke="#10b981"
                     strokeWidth="9"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 545 460 L 385 520 L 220 560"
+                    d={`M ${mdfWorld.x - 20} ${mdfWorld.y + 10} L ${idfWorld.x + 15} ${idfWorld.y + 5}`}
                     fill="none"
                     stroke="#d1fae5"
                     strokeWidth="2.8"
@@ -1096,8 +1581,8 @@ export default function IsometricBlueprintView({
                   />
                 </g>
 
-                {/* Inline Callout Badge for Bi-Directionally Verified Switch-to-Switch Trunk (Positioned below the conduit with zero overlap) */}
-                <g transform="translate(475, 595)">
+                {/* Inline Callout Badge for Bi-Directionally Verified Switch-to-Switch Trunk */}
+                <g transform={`translate(${trunkMidX + 85}, ${trunkMidY + 90})`}>
                   <rect
                     x="-138"
                     y="-22"
@@ -1142,10 +1627,10 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT C: Glowing Cyan PoE Conduit from T-BAN-2FL-WL (595,445) across to Wi-Fi 6 AP Zone (950,290) */}
+                {/* CONDUIT C: Glowing Cyan PoE Conduit from T-BAN-2FL-WL across to Cyan Wi-Fi 6 AP Base */}
                 <g filter="url(#glowCyan)">
                   <path
-                    d="M 605 445 L 775 445 L 775 280 L 925 280"
+                    d={`M ${poeStartX} ${poeStartY} L ${poeTurnX} ${poeStartY} L ${poeTurnX} ${poeEndY} L ${poeEndX} ${poeEndY}`}
                     fill="none"
                     stroke="#06b6d4"
                     strokeWidth="7"
@@ -1153,7 +1638,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                   <path
-                    d="M 605 445 L 775 445 L 775 280 L 925 280"
+                    d={`M ${poeStartX} ${poeStartY} L ${poeTurnX} ${poeStartY} L ${poeTurnX} ${poeEndY} L ${poeEndX} ${poeEndY}`}
                     fill="none"
                     stroke="#cffafe"
                     strokeWidth="2.2"
@@ -1161,7 +1646,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                 </g>
-                <g transform="translate(775, 365)">
+                <g transform={`translate(${poeTurnX}, ${Math.round((poeStartY + poeEndY) / 2)})`}>
                   <rect
                     x="-92"
                     y="-15"
@@ -1195,10 +1680,10 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT D: Glowing Purple Core-to-Colocation Conduit from tcore-9600 (335,210) to Halsey165 / Hastings Zone (940,585) */}
+                {/* CONDUIT D: Glowing Purple Core-to-Colocation Conduit from tcore-9600 to Purplish Colo Base */}
                 <g filter="url(#glowPurple)">
                   <path
-                    d="M 335 205 L 735 205 L 735 585 L 930 585"
+                    d={`M ${coloStartX} ${coloStartY} L ${coloTurnX} ${coloStartY} L ${coloTurnX} ${coloEndY} L ${coloEndX} ${coloEndY}`}
                     fill="none"
                     stroke="#a855f7"
                     strokeWidth="7.5"
@@ -1206,7 +1691,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                   <path
-                    d="M 335 205 L 735 205 L 735 585 L 930 585"
+                    d={`M ${coloStartX} ${coloStartY} L ${coloTurnX} ${coloStartY} L ${coloTurnX} ${coloEndY} L ${coloEndX} ${coloEndY}`}
                     fill="none"
                     stroke="#f3e8ff"
                     strokeWidth="2.2"
@@ -1214,7 +1699,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                 </g>
-                <g transform="translate(735, 515)">
+                <g transform={`translate(${coloTurnX}, ${Math.round((coloStartY + coloEndY) / 2 + 35)})`}>
                   <rect
                     x="-105"
                     y="-15"
@@ -1249,13 +1734,12 @@ export default function IsometricBlueprintView({
                 </g>
 
                 {/* =========================================================
-                    3D ISOMETRIC HARDWARE NODES (CORE + 2 POLLED C9300s + 7 APs)
+                    DRAGGABLE 3D ISOMETRIC HARDWARE NODES (CLAMPED TO THEIR SQUARE BASES)
                    ========================================================= */}
 
                 {/* 1. Tier 1 Core Tower: tcore-9600.net.fdu.edu */}
                 {renderIsometric3DCoreTower({
-                  x: 280,
-                  y: 215,
+                  deviceId: 'coreNode',
                   hostname: coreNode.hostname,
                   model: coreNode.model || 'C9606R',
                   ip: coreNode.mgmtIp || '132.238.1.40',
@@ -1264,7 +1748,6 @@ export default function IsometricBlueprintView({
                       ? `2x 25G Fiber Ports: Tw2/2/0/35 & Tw1/2/0/35`
                       : 'Discovered via CDP • Click to Poll SSH',
                   onClick: () => {
-                    setSelectedNodeKey(coreNode.hostname);
                     if (!coreNode.isPolled && onPollNeighbor && coreNode.mgmtIp !== '—') {
                       onPollNeighbor(coreNode.mgmtIp, coreNode.hostname);
                     }
@@ -1273,8 +1756,7 @@ export default function IsometricBlueprintView({
 
                 {/* 2. Tier 2 Polled Distribution Switch: T-BAN-2FL-WL */}
                 {renderIsometric3DSwitch({
-                  x: 565,
-                  y: 450,
+                  deviceId: 'mdfNode',
                   scale: 1.05,
                   title: mdfNode.hostname,
                   subtitle: mdfNode.iosVersion || '17.15.04',
@@ -1287,7 +1769,6 @@ export default function IsometricBlueprintView({
                   isPolled: true,
                   accentColor: '#34d399',
                   onClick: () => {
-                    setSelectedNodeKey(mdfNode.hostname);
                     if (onSelectSavedDevice && mdfNode.serialNumber) {
                       onSelectSavedDevice(mdfNode.serialNumber);
                     }
@@ -1296,8 +1777,7 @@ export default function IsometricBlueprintView({
 
                 {/* 3. Tier 3 Polled IDF Switch: T-BAN-2FL-WorkStudy-C9300 */}
                 {renderIsometric3DSwitch({
-                  x: 205,
-                  y: 555,
+                  deviceId: 'idfNode',
                   scale: 1.05,
                   title: idfNode.hostname,
                   subtitle: idfNode.iosVersion || '17.15.04',
@@ -1310,14 +1790,13 @@ export default function IsometricBlueprintView({
                   isPolled: true,
                   accentColor: '#38bdf8',
                   onClick: () => {
-                    setSelectedNodeKey(idfNode.hostname);
                     if (onSelectSavedDevice && idfNode.serialNumber) {
                       onSelectSavedDevice(idfNode.serialNumber);
                     }
                   }
                 })}
 
-                {/* 4. 7 Connected Cisco Catalyst Wi-Fi 6 APs inside the Right Access Zone */}
+                {/* 4. 7 Connected Cisco Catalyst Wi-Fi 6 APs inside the Cyan Access Base */}
                 {(attachedAps.length > 0
                   ? attachedAps
                   : [
@@ -1329,25 +1808,41 @@ export default function IsometricBlueprintView({
                       { localPort: 'Te1/0/8', hostname: 'M-BAN-228-A', ip: '10.8.25.177', model: 'C9130AXI-B', poeWatts: 30 },
                       { localPort: 'Te1/0/14', hostname: 'M-BAN-Sniffer', ip: '10.8.25.195', model: 'C9105AXW-B', poeWatts: 14 }
                     ]
-                ).map((ap, idx) => {
-                  const col = idx % 2;
-                  const row = Math.floor(idx / 2);
-                  const ax = col === 0 ? 905 : 1145;
-                  const ay = 165 + row * 56;
-                  return renderIsometric3DApNode({
-                    key: `${ap.localPort}-${idx}`,
-                    x: ax,
-                    y: ay,
-                    hostname: ap.hostname,
-                    ip: ap.ip,
-                    model: ap.model,
-                    localPort: ap.localPort,
-                    poeWatts: ap.poeWatts
-                  });
-                })}
+                )
+                  .slice(0, 7)
+                  .map((ap, idx) =>
+                    renderIsometric3DApNode({
+                      deviceId: `ap-${idx}`,
+                      hostname: ap.hostname,
+                      ip: ap.ip,
+                      model: ap.model,
+                      localPort: ap.localPort,
+                      poeWatts: ap.poeWatts
+                    })
+                  )}
 
-                {/* 5. Colocation & ISP Handoff Nodes in Bottom-Right Purple Zone */}
-                <g transform="translate(970, 565)">
+                {/* 5. Draggable Colocation & ISP Handoff Nodes inside the Purplish Colo Base */}
+                <g
+                  transform={`translate(${halseyColoWorld.x}, ${halseyColoWorld.y})`}
+                  onPointerDown={(e) =>
+                    handleStartDeviceDrag(e, 'halseyColo', () => {
+                      setSelectedNodeKey('Halsey165 Colo');
+                      setHoveredDeviceInfo({
+                        title: '🇺🇸 Halsey165 Colo',
+                        model: '165 Halsey St (Newark, NJ)',
+                        ip: 'Metro ↔ Halsey165 ↔ Florham',
+                        serial: 'US Tier-1 ISP Transit',
+                        subtitle: 'Colocation Core Hub'
+                      });
+                    })
+                  }
+                  style={{
+                    cursor:
+                      activeDrag?.kind === 'device' && activeDrag?.id === 'halseyColo'
+                        ? 'grabbing'
+                        : 'grab'
+                  }}
+                >
                   <rect
                     x="-65"
                     y="-26"
@@ -1355,7 +1850,11 @@ export default function IsometricBlueprintView({
                     height="56"
                     rx="8"
                     fill="#1e1b4b"
-                    stroke="#c084fc"
+                    stroke={
+                      activeDrag?.id === 'halseyColo' || selectedNodeKey === 'Halsey165 Colo'
+                        ? '#ffffff'
+                        : '#c084fc'
+                    }
                     strokeWidth="1.8"
                   />
                   <text
@@ -1391,7 +1890,27 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                <g transform="translate(1225, 565)">
+                <g
+                  transform={`translate(${hastingsColoWorld.x}, ${hastingsColoWorld.y})`}
+                  onPointerDown={(e) =>
+                    handleStartDeviceDrag(e, 'hastingsColo', () => {
+                      setSelectedNodeKey('Hastings Colo');
+                      setHoveredDeviceInfo({
+                        title: '🇨🇦 Hastings Colo',
+                        model: 'Harbour Centre (Vancouver, BC)',
+                        ip: 'VancOakridge ↔ Hastings',
+                        serial: 'Canada ISP & BCNET',
+                        subtitle: 'Colocation Core Hub'
+                      });
+                    })
+                  }
+                  style={{
+                    cursor:
+                      activeDrag?.kind === 'device' && activeDrag?.id === 'hastingsColo'
+                        ? 'grabbing'
+                        : 'grab'
+                  }}
+                >
                   <rect
                     x="-65"
                     y="-26"
@@ -1399,7 +1918,11 @@ export default function IsometricBlueprintView({
                     height="56"
                     rx="8"
                     fill="#311042"
-                    stroke="#f472b6"
+                    stroke={
+                      activeDrag?.id === 'hastingsColo' || selectedNodeKey === 'Hastings Colo'
+                        ? '#ffffff'
+                        : '#f472b6'
+                    }
                     strokeWidth="1.8"
                   />
                   <text
@@ -1522,12 +2045,9 @@ export default function IsometricBlueprintView({
                   🇨🇦 CANADA REGION (VANCOUVER CAMPUS &amp; COLO)
                 </text>
 
-                {/* Isometric Pads for Metro, Halsey165, Florham, Hastings, VancOakridge */}
+                {/* Draggable Isometric Pads for Metro, Halsey165, Florham, Hastings, VancOakridge */}
                 {renderIsometricZonePad({
-                  cx: 415,
-                  cy: 245,
-                  w: 390,
-                  h: 165,
+                  padId: 'halseyPad',
                   fill: '#f97316',
                   stroke: '#fb923c',
                   glowId: 'glowOrange',
@@ -1537,10 +2057,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometricZonePad({
-                  cx: 245,
-                  cy: 525,
-                  w: 340,
-                  h: 185,
+                  padId: 'metroPad',
                   fill: '#10b981',
                   stroke: '#34d399',
                   glowId: 'glowCyan',
@@ -1550,10 +2067,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometricZonePad({
-                  cx: 585,
-                  cy: 525,
-                  w: 340,
-                  h: 185,
+                  padId: 'florhamPad',
                   fill: '#38bdf8',
                   stroke: '#60a5fa',
                   glowId: 'glowCyan',
@@ -1563,10 +2077,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometricZonePad({
-                  cx: 1115,
-                  cy: 245,
-                  w: 380,
-                  h: 165,
+                  padId: 'hastingsPad',
                   fill: '#a855f7',
                   stroke: '#c084fc',
                   glowId: 'glowPurple',
@@ -1576,10 +2087,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometricZonePad({
-                  cx: 1115,
-                  cy: 525,
-                  w: 380,
-                  h: 185,
+                  padId: 'vancPad',
                   fill: '#10b981',
                   stroke: '#34d399',
                   glowId: 'glowCyan',
@@ -1588,26 +2096,32 @@ export default function IsometricBlueprintView({
                   labelColor: '#a7f3d0'
                 })}
 
-                {/* Cross-Border Core Tunnel: Halsey165 <-> Hastings */}
+                {/* Dynamic Cross-Border Core Tunnel: Halsey165 <-> Hastings */}
                 <g filter="url(#glowPurple)">
                   <line
-                    x1="520"
-                    y1="245"
-                    x2="1000"
-                    y2="245"
+                    x1={layout.pads.halseyPad.cx + 95}
+                    y1={layout.pads.halseyPad.cy}
+                    x2={layout.pads.hastingsPad.cx - 95}
+                    y2={layout.pads.hastingsPad.cy}
                     stroke="#a855f7"
                     strokeWidth="9"
                   />
                   <line
-                    x1="520"
-                    y1="245"
-                    x2="1000"
-                    y2="245"
+                    x1={layout.pads.halseyPad.cx + 95}
+                    y1={layout.pads.halseyPad.cy}
+                    x2={layout.pads.hastingsPad.cx - 95}
+                    y2={layout.pads.hastingsPad.cy}
                     stroke="#f3e8ff"
                     strokeWidth="2.5"
                   />
                 </g>
-                <g transform="translate(760, 245)">
+                <g
+                  transform={`translate(${Math.round(
+                    (layout.pads.halseyPad.cx + layout.pads.hastingsPad.cx) / 2
+                  )}, ${Math.round(
+                    (layout.pads.halseyPad.cy + layout.pads.hastingsPad.cy) / 2
+                  )})`}
+                >
                   <rect
                     x="-125"
                     y="-16"
@@ -1641,38 +2155,37 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* Metro <-> Halsey165 and Florham <-> Halsey165 Conduits */}
+                {/* Dynamic Metro <-> Halsey165, Florham <-> Halsey165, and Hastings <-> VancOakridge Conduits */}
                 <g filter="url(#glowCyan)">
                   <line
-                    x1="365"
-                    y1="280"
-                    x2="255"
-                    y2="465"
+                    x1={layout.pads.halseyPad.cx - 40}
+                    y1={layout.pads.halseyPad.cy + 35}
+                    x2={layout.pads.metroPad.cx + 10}
+                    y2={layout.pads.metroPad.cy - 45}
                     stroke="#10b981"
                     strokeWidth="7"
                   />
                   <line
-                    x1="465"
-                    y1="280"
-                    x2="575"
-                    y2="465"
+                    x1={layout.pads.halseyPad.cx + 40}
+                    y1={layout.pads.halseyPad.cy + 35}
+                    x2={layout.pads.florhamPad.cx - 10}
+                    y2={layout.pads.florhamPad.cy - 45}
                     stroke="#38bdf8"
                     strokeWidth="7"
                   />
                   <line
-                    x1="1115"
-                    y1="305"
-                    x2="1115"
-                    y2="465"
+                    x1={layout.pads.hastingsPad.cx}
+                    y1={layout.pads.hastingsPad.cy + 50}
+                    x2={layout.pads.vancPad.cx}
+                    y2={layout.pads.vancPad.cy - 50}
                     stroke="#10b981"
                     strokeWidth="7"
                   />
                 </g>
 
-                {/* 3D Nodes on Global Map */}
+                {/* Draggable 3D Nodes on Global Map */}
                 {renderIsometric3DCoreTower({
-                  x: 415,
-                  y: 230,
+                  deviceId: 'globalHalsey',
                   hostname: 'Halsey165 Core Hub',
                   model: '165 Halsey St (NJ)',
                   ip: 'Metro ↔ Florham Hub',
@@ -1681,8 +2194,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometric3DCoreTower({
-                  x: 1115,
-                  y: 230,
+                  deviceId: 'globalHastings',
                   hostname: 'Hastings Core Hub',
                   model: 'W. Hastings St (BC)',
                   ip: 'VancOakridge Hub',
@@ -1691,8 +2203,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometric3DSwitch({
-                  x: 245,
-                  y: 515,
+                  deviceId: 'globalMetro',
                   scale: 0.95,
                   title: 'Metro Campus (Bancroft)',
                   subtitle: '17.15.04',
@@ -1707,8 +2218,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometric3DSwitch({
-                  x: 585,
-                  y: 515,
+                  deviceId: 'globalFlorham',
                   scale: 0.95,
                   title: 'Florham Campus',
                   subtitle: 'IOS-XE',
@@ -1723,8 +2233,7 @@ export default function IsometricBlueprintView({
                 })}
 
                 {renderIsometric3DSwitch({
-                  x: 1115,
-                  y: 515,
+                  deviceId: 'globalVanc',
                   scale: 0.95,
                   title: 'VancOakridge Campus',
                   subtitle: 'IOS-XE',
@@ -1761,12 +2270,12 @@ export default function IsometricBlueprintView({
               fontWeight="700"
               fontFamily="ui-monospace, SFMono-Regular, Menlo, monospace"
             >
-              LIVE IOS-XE SHOW COMMAND &amp; CDP TELEMETRY BLUEPRINT • POSTGRESQL 16 VERIFIED •{' '}
+              LIVE IOS-XE SHOW COMMAND &amp; CDP TELEMETRY BLUEPRINT • DRAGGABLE BASES &amp; DEVICES (SAVED IN POSTGRESQL 16) •{' '}
               {switchNodes.filter((n) => n.isPolled).length} POLLED SWITCHES /{' '}
               {globalGraph?.links?.length || 10} ACTIVE LINKS
             </text>
 
-            {/* Bottom-Right Legend Box (Matching Reference Image) */}
+            {/* Bottom-Right Legend Box */}
             <g transform="translate(1110, 740)">
               <rect
                 x="0"

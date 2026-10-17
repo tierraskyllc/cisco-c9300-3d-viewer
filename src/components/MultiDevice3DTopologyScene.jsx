@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -28,13 +28,79 @@ import {
   EyeOff,
   Maximize2,
   Sparkles,
-  Activity
+  Activity,
+  ArrowUpDown,
+  RotateCcw,
+  Save
 } from 'lucide-react';
 import {
   GLOBAL_SITES,
   ISP_PROVIDERS,
   buildGlobalAndSiteTopology
 } from '../data/globalNetworkData';
+
+const LAYOUT_3D_STORAGE_KEY = 'fdu_multi_device_3d_layout_v1';
+const API_3D_LAYOUT_ENDPOINT = '/api/topology/layouts/multi_device_3d_v1';
+const FLOOR_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.2);
+
+/**
+ * Default 3D coordinates for the 4 Square Zone Bases and relative (dx, dz) offsets for every 3D device.
+ * Because devices store (dx, dz) relative to their parent 3D Square Zone Base:
+ * 1) Dragging a 3D Square Zone Base moves the base AND all devices on it together.
+ * 2) Dragging an individual 3D Device moves it smoothly while clamping it within/near its parent Square Base.
+ */
+const DEFAULT_3D_LAYOUT = {
+  pads: {
+    coreZone: { cx: -6.8, cz: -5.2, w: 8.2, d: 5.2 },
+    switchZone: { cx: -6.4, cz: 3.4, w: 9.8, d: 8.6 },
+    apZone: { cx: 6.5, cz: -2.2, w: 9.6, d: 9.8 },
+    coloZone: { cx: 6.5, cz: 5.5, w: 9.6, d: 5.2 }
+  },
+  devices: {
+    // Relative to coreZone (-6.8, -5.2)
+    coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 3.4, maxDz: 2.2 },
+    // Relative to switchZone (-6.4, 3.4)
+    wlNode: { dx: 2.2, dz: -2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
+    wsNode: { dx: -2.2, dz: 2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
+    // 7 Wi-Fi 6 APs relative to apZone (6.5, -2.2)
+    'ap-0': { dx: -2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-1': { dx: 2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-2': { dx: -2.2, dz: -1.25, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-3': { dx: 2.2, dz: -1.25, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-4': { dx: -2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-5': { dx: 2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-6': { dx: -2.2, dz: 3.85, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    // 4 Colocation / Campus Sites relative to coloZone (6.5, 5.5)
+    'colo-Halsey165': { dx: -2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
+    'colo-Hastings': { dx: 2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
+    'colo-Florham': { dx: -2.2, dz: 1.4, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
+    'colo-VancOakridge': { dx: 2.2, dz: 1.4, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 }
+  }
+};
+
+function mergeWithDefault3DLayout(saved) {
+  if (!saved || typeof saved !== 'object') return structuredClone(DEFAULT_3D_LAYOUT);
+  const merged = structuredClone(DEFAULT_3D_LAYOUT);
+  if (saved.pads && typeof saved.pads === 'object') {
+    for (const [k, v] of Object.entries(saved.pads)) {
+      if (merged.pads[k] && typeof v?.cx === 'number' && typeof v?.cz === 'number') {
+        merged.pads[k] = { ...merged.pads[k], cx: v.cx, cz: v.cz };
+      }
+    }
+  }
+  if (saved.devices && typeof saved.devices === 'object') {
+    for (const [k, v] of Object.entries(saved.devices)) {
+      if (merged.devices[k] && typeof v?.dx === 'number' && typeof v?.dz === 'number') {
+        merged.devices[k] = { ...merged.devices[k], dx: v.dx, dz: v.dz };
+      }
+    }
+  }
+  return merged;
+}
+
+function clamp(val, min, max) {
+  return Math.max(min, Math.min(max, val));
+}
 
 /**
  * Smooth 3D Camera Controller for the Multi-Device 3D Network Topology Scene
@@ -104,64 +170,107 @@ function formatShortIosVersion(raw) {
 }
 
 /**
- * Glowing 3D Isometric Zone Platform Pad (matches the reference blueprint pads in 3D space)
+ * Glowing 3D Isometric Zone Platform Pad (Draggable across the 3D floor grid)
  */
 function ZonePlatform3D({
+  padId,
   position,
   size = [12, 0.35, 14],
   baseColor = '#0c1938',
   rimColor = '#38bdf8',
   title,
   subtitle,
-  showZoneTitles = false
+  showZoneTitles = false,
+  isDraggingThisPad = false,
+  isParentOfDraggedDevice = false,
+  onStartPadDrag
 }) {
+  const [hovered, setHovered] = useState(false);
   const [w, h, d] = size;
+  const activeHighlight = isDraggingThisPad || isParentOfDraggedDevice;
+
   return (
-    <group position={position}>
+    <group
+      position={position}
+      onPointerDown={(e) => {
+        if (onStartPadDrag) onStartPadDrag(e, padId);
+      }}
+      onPointerOver={(e) => {
+        e.stopPropagation();
+        setHovered(true);
+      }}
+      onPointerOut={() => setHovered(false)}
+    >
       {/* Main 3D Architectural Slab */}
-      <RoundedBox args={[w, h, d]} radius={0.14} smoothness={4} position={[0, -h / 2, 0]} receiveShadow>
+      <RoundedBox
+        args={[w, h, d]}
+        radius={0.14}
+        smoothness={4}
+        position={[0, -h / 2, 0]}
+        receiveShadow
+      >
         <meshStandardMaterial
           color={baseColor}
           metalness={0.45}
           roughness={0.35}
           transparent
-          opacity={0.92}
+          opacity={activeHighlight ? 0.98 : 0.92}
         />
       </RoundedBox>
 
       {/* Glowing Neon Top Perimeter Frame */}
       <mesh position={[0, 0.01, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <ringGeometry args={[Math.min(w, d) * 0.48, Math.min(w, d) * 0.495, 4]} />
-        <meshBasicMaterial color={rimColor} transparent opacity={0.15} />
+        <meshBasicMaterial
+          color={activeHighlight ? '#ffffff' : rimColor}
+          transparent
+          opacity={activeHighlight ? 0.4 : 0.15}
+        />
       </mesh>
 
       {/* 4 Glowing Perimeter Edge Bars */}
       <mesh position={[0, 0.02, d / 2 - 0.05]}>
         <boxGeometry args={[w - 0.1, 0.05, 0.08]} />
-        <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.6} />
+        <meshStandardMaterial
+          color={activeHighlight ? '#ffffff' : rimColor}
+          emissive={activeHighlight ? '#ffffff' : rimColor}
+          emissiveIntensity={activeHighlight || hovered ? 2.4 : 1.6}
+        />
       </mesh>
       <mesh position={[0, 0.02, -d / 2 + 0.05]}>
         <boxGeometry args={[w - 0.1, 0.05, 0.08]} />
-        <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.2} />
+        <meshStandardMaterial
+          color={activeHighlight ? '#ffffff' : rimColor}
+          emissive={activeHighlight ? '#ffffff' : rimColor}
+          emissiveIntensity={activeHighlight || hovered ? 2.2 : 1.2}
+        />
       </mesh>
       <mesh position={[-w / 2 + 0.05, 0.02, 0]}>
         <boxGeometry args={[0.08, 0.05, d - 0.1]} />
-        <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.4} />
+        <meshStandardMaterial
+          color={activeHighlight ? '#ffffff' : rimColor}
+          emissive={activeHighlight ? '#ffffff' : rimColor}
+          emissiveIntensity={activeHighlight || hovered ? 2.2 : 1.4}
+        />
       </mesh>
       <mesh position={[w / 2 - 0.05, 0.02, 0]}>
         <boxGeometry args={[0.08, 0.05, d - 0.1]} />
-        <meshStandardMaterial color={rimColor} emissive={rimColor} emissiveIntensity={1.4} />
+        <meshStandardMaterial
+          color={activeHighlight ? '#ffffff' : rimColor}
+          emissive={activeHighlight ? '#ffffff' : rimColor}
+          emissiveIntensity={activeHighlight || hovered ? 2.2 : 1.4}
+        />
       </mesh>
 
-      {/* Optional Zone Title Pill */}
-      {showZoneTitles && title && (
+      {/* Optional Zone Title Pill (or shown while dragging/hovering the base corner) */}
+      {(showZoneTitles || activeHighlight) && title && (
         <Html position={[-w / 2 + 0.6, 0.12, d / 2 + 0.55]} center={false} zIndexRange={[5, 0]}>
-          <div className="pointer-events-none select-none whitespace-nowrap px-2 py-0.5 rounded bg-slate-950/85 border border-slate-700/80 shadow">
+          <div className="pointer-events-none select-none whitespace-nowrap px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700/90 shadow">
             <div
               className="text-[9px] font-mono font-bold tracking-wider uppercase"
               style={{ color: rimColor }}
             >
-              {title}
+              ✥ {title}
             </div>
             {subtitle && (
               <div className="text-[8px] font-mono text-slate-400">{subtitle}</div>
@@ -297,13 +406,16 @@ function ConduitLink3D({
 }
 
 /**
- * 3D Cisco Catalyst C9606R Modular Core Chassis Tower
+ * 3D Cisco Catalyst C9606R Modular Core Chassis Tower (Draggable within/near its Square Base)
  */
 function CoreChassis9606R3D({
+  deviceId,
   node,
   position,
   isSelected,
+  isDragging,
   onSelect,
+  onStartDeviceDrag,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
@@ -313,17 +425,22 @@ function CoreChassis9606R3D({
   const visible =
     hovered ||
     isSelected ||
+    isDragging ||
     labelMode === 'switches' ||
     labelMode === 'compact' ||
     labelMode === 'all';
-  const showFullDetails = hovered || isSelected || labelMode === 'all' || labelMode === 'switches';
+  const showFullDetails =
+    hovered || isSelected || isDragging || labelMode === 'all' || labelMode === 'switches';
 
   return (
     <group
       position={position}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect({ type: 'device', data: node, id: node.id, pos: position });
+      onPointerDown={(e) => {
+        if (onStartDeviceDrag) {
+          onStartDeviceDrag(e, deviceId, () =>
+            onSelect({ type: 'device', data: node, id: node.id, pos: position })
+          );
+        }
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -331,18 +448,18 @@ function CoreChassis9606R3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {/* Selection / Hover Ring on Pad */}
-      {(isSelected || hovered) && (
+      {/* Selection / Hover / Drag Ring on Pad */}
+      {(isSelected || hovered || isDragging) && (
         <mesh position={[0, 0.05, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.1, 2.38, 32]} />
-          <meshBasicMaterial color={isSelected ? '#38bdf8' : '#fb923c'} />
+          <ringGeometry args={[2.1, 2.42, 32]} />
+          <meshBasicMaterial color={isDragging ? '#ffffff' : isSelected ? '#38bdf8' : '#fb923c'} />
         </mesh>
       )}
 
       {/* 6-Slot Modular Core Chassis Main Tower */}
       <RoundedBox args={[3.2, 2.7, 2.6]} radius={0.12} smoothness={4} position={[0, 1.35, 0]} castShadow>
         <meshStandardMaterial
-          color={isSelected ? '#1e3a5f' : hovered ? '#263859' : '#17253b'}
+          color={isDragging ? '#3b82f6' : isSelected ? '#1e3a5f' : hovered ? '#263859' : '#17253b'}
           metalness={0.65}
           roughness={0.28}
         />
@@ -386,7 +503,7 @@ function CoreChassis9606R3D({
         );
       })}
 
-      {/* Floating Compact 3D Badge */}
+      {/* Floating Compact 3D Badge (Moves with Device in Real Time) */}
       {visible && (
         <Html position={[0, 3.35, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -395,7 +512,7 @@ function CoreChassis9606R3D({
               onSelect({ type: 'device', data: node, id: node.id, pos: position });
             }}
             className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-xl transition ${
-              isSelected
+              isSelected || isDragging
                 ? 'bg-amber-950/95 border-amber-300 ring-1 ring-amber-400/50'
                 : 'bg-slate-950/90 border-amber-500/60 hover:border-amber-300'
             }`}
@@ -420,14 +537,17 @@ function CoreChassis9606R3D({
 }
 
 /**
- * 3D Cisco Catalyst C9300 Switch Chassis inside the Multi-Device Topology Scene
+ * 3D Cisco Catalyst C9300 Switch Chassis inside the Multi-Device Topology Scene (Draggable within/near its Square Base)
  */
 function SwitchC9300Node3D({
+  deviceId,
   node,
   position,
   isSelected,
+  isDragging,
   isActiveChassis,
   onSelect,
+  onStartDeviceDrag,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
@@ -436,17 +556,25 @@ function SwitchC9300Node3D({
   const visible =
     hovered ||
     isSelected ||
+    isDragging ||
     labelMode === 'switches' ||
     labelMode === 'compact' ||
     labelMode === 'all';
-  const showFullDetails = hovered || isSelected || labelMode === 'all' || labelMode === 'switches';
+  const showFullDetails =
+    hovered || isSelected || isDragging || labelMode === 'all' || labelMode === 'switches';
 
   return (
     <group
       position={position}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect({ type: 'device', data: node, id: node.id, pos: position });
+      onPointerDown={(e) => {
+        if (onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(e, deviceId, () =>
+            onSelect({ type: 'device', data: node, id: node.id, pos: position })
+          );
+        } else {
+          e.stopPropagation();
+          onSelect({ type: 'device', data: node, id: node.id, pos: position });
+        }
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -454,11 +582,11 @@ function SwitchC9300Node3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {/* Selection / Active Halo on Floor */}
-      {(isSelected || hovered || isActiveChassis) && (
+      {/* Selection / Active / Drag Halo on Floor */}
+      {(isSelected || hovered || isActiveChassis || isDragging) && (
         <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.1, 2.38, 32]} />
-          <meshBasicMaterial color={isSelected ? '#ffffff' : accentColor} />
+          <ringGeometry args={[2.1, 2.42, 32]} />
+          <meshBasicMaterial color={isDragging || isSelected ? '#ffffff' : accentColor} />
         </mesh>
       )}
 
@@ -471,7 +599,7 @@ function SwitchC9300Node3D({
       {/* Authentic 1RU Cisco Catalyst 9300 Sheet-Metal Enclosure */}
       <RoundedBox args={[3.8, 0.68, 2.4]} radius={0.08} smoothness={3} position={[0, 0.84, 0]} castShadow>
         <meshStandardMaterial
-          color={isSelected ? '#2563eb' : hovered ? '#334155' : '#1e293b'}
+          color={isDragging ? '#0284c7' : isSelected ? '#2563eb' : hovered ? '#334155' : '#1e293b'}
           metalness={0.62}
           roughness={0.3}
         />
@@ -550,7 +678,7 @@ function SwitchC9300Node3D({
         );
       })}
 
-      {/* Compact Non-Overlapping Floating 3D Badge */}
+      {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time) */}
       {visible && (
         <Html position={[0, 1.75, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -559,7 +687,7 @@ function SwitchC9300Node3D({
               onSelect({ type: 'device', data: node, id: node.id, pos: position });
             }}
             className={`cursor-pointer select-none whitespace-nowrap px-2.5 py-1 rounded-lg border shadow-xl transition ${
-              isSelected
+              isSelected || isDragging
                 ? 'bg-sky-950/95 border-white ring-1 ring-sky-400/60'
                 : 'bg-slate-950/90 border-sky-500/60 hover:border-sky-300'
             }`}
@@ -592,26 +720,36 @@ function SwitchC9300Node3D({
 }
 
 /**
- * 3D Cisco Catalyst 9130AXI / 9105AXW Wi-Fi 6 Access Point Node
+ * 3D Cisco Catalyst 9130AXI / 9105AXW Wi-Fi 6 Access Point Node (Draggable within/near its Square Base)
  */
 function WirelessApNode3D({
+  deviceId,
   ap,
   position,
   isSelected,
+  isDragging,
   onSelect,
+  onStartDeviceDrag,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
 
-  const visible = hovered || isSelected || labelMode === 'compact' || labelMode === 'all';
-  const showFullDetails = hovered || isSelected || labelMode === 'all';
+  const visible =
+    hovered || isSelected || isDragging || labelMode === 'compact' || labelMode === 'all';
+  const showFullDetails = hovered || isSelected || isDragging || labelMode === 'all';
 
   return (
     <group
       position={position}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position });
+      onPointerDown={(e) => {
+        if (onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(e, deviceId, () =>
+            onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position })
+          );
+        } else {
+          e.stopPropagation();
+          onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position });
+        }
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -619,17 +757,17 @@ function WirelessApNode3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {(isSelected || hovered) && (
+      {(isSelected || hovered || isDragging) && (
         <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[0.9, 1.08, 24]} />
-          <meshBasicMaterial color="#10b981" />
+          <ringGeometry args={[0.9, 1.12, 24]} />
+          <meshBasicMaterial color={isDragging ? '#ffffff' : '#10b981'} />
         </mesh>
       )}
 
       {/* Rounded Square Cisco Catalyst 9130AXI AP Enclosure */}
       <RoundedBox args={[1.45, 0.32, 1.45]} radius={0.18} smoothness={4} position={[0, 0.22, 0]} castShadow>
         <meshStandardMaterial
-          color={isSelected ? '#0284c7' : hovered ? '#334155' : '#1e293b'}
+          color={isDragging ? '#10b981' : isSelected ? '#0284c7' : hovered ? '#334155' : '#1e293b'}
           metalness={0.35}
           roughness={0.4}
         />
@@ -650,7 +788,7 @@ function WirelessApNode3D({
               onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position });
             }}
             className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-lg transition ${
-              isSelected
+              isSelected || isDragging
                 ? 'bg-emerald-950 border-emerald-300 text-white'
                 : 'bg-slate-950/90 border-emerald-500/45 text-slate-100 hover:border-emerald-300'
             }`}
@@ -671,27 +809,37 @@ function WirelessApNode3D({
 }
 
 /**
- * 3D Colocation / Regional Campus Node (Halsey165, Hastings, Florham, VancOakridge)
+ * 3D Colocation / Regional Campus Node (Draggable within/near its Square Base)
  */
 function ColocationHub3D({
+  deviceId,
   site,
   position,
   isSelected,
+  isDragging,
   onSelect,
+  onStartDeviceDrag,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
   const color = site.country === 'CA' ? '#f43f5e' : '#a855f7';
 
-  const visible = hovered || isSelected || labelMode === 'compact' || labelMode === 'all';
-  const showFullDetails = hovered || isSelected || labelMode === 'all';
+  const visible =
+    hovered || isSelected || isDragging || labelMode === 'compact' || labelMode === 'all';
+  const showFullDetails = hovered || isSelected || isDragging || labelMode === 'all';
 
   return (
     <group
       position={position}
-      onClick={(e) => {
-        e.stopPropagation();
-        onSelect({ type: 'site', data: site, id: site.code, pos: position });
+      onPointerDown={(e) => {
+        if (onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(e, deviceId, () =>
+            onSelect({ type: 'site', data: site, id: site.code, pos: position })
+          );
+        } else {
+          e.stopPropagation();
+          onSelect({ type: 'site', data: site, id: site.code, pos: position });
+        }
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -699,9 +847,16 @@ function ColocationHub3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
+      {(isSelected || hovered || isDragging) && (
+        <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <ringGeometry args={[1.35, 1.55, 24]} />
+          <meshBasicMaterial color={isDragging ? '#ffffff' : color} />
+        </mesh>
+      )}
+
       <RoundedBox args={[2.3, 1.25, 1.7]} radius={0.1} smoothness={3} position={[0, 0.65, 0]} castShadow>
         <meshStandardMaterial
-          color={isSelected ? '#581c87' : hovered ? '#3b0764' : '#1e1b4b'}
+          color={isDragging ? '#7e22ce' : isSelected ? '#581c87' : hovered ? '#3b0764' : '#1e1b4b'}
           metalness={0.55}
           roughness={0.35}
         />
@@ -719,7 +874,7 @@ function ColocationHub3D({
               onSelect({ type: 'site', data: site, id: site.code, pos: position });
             }}
             className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-lg transition ${
-              isSelected
+              isSelected || isDragging
                 ? 'bg-purple-950 border-white text-white'
                 : 'bg-slate-950/90 border-purple-500/50 text-slate-100 hover:border-purple-300'
             }`}
@@ -739,6 +894,7 @@ function ColocationHub3D({
 
 /**
  * Main Export: Multi-Device 3D Network Topology Camera View + Collapsible Click-to-Inspect Drawer
+ * - Supports dragging & saving both 3D Square Zone Bases and individual 3D Devices (clamped near their Square Base)
  */
 export default function MultiDevice3DTopologyScene({
   parsedSwitchData,
@@ -752,8 +908,8 @@ export default function MultiDevice3DTopologyScene({
   const [cameraPreset, setCameraPreset] = useState('blueprint-iso');
   const [focusTarget, setFocusTarget] = useState(null);
   // 4 Label Display Modes:
-  // 'hover'    (Hover / Selected Only — 100% unobstructed 3D hardware & animated conduits!)
-  // 'switches' (Core & Switches Only — default clean mode; APs & Colos appear on hover/click)
+  // 'hover'    (Hover / Click Only — 100% unobstructed 3D hardware & animated conduits!)
+  // 'switches' (Core & Switches Only — APs & Colos appear on hover/click)
   // 'compact'  (Minimal 1-line Hostname tags on all devices)
   // 'all'      (All 2-line device details visible simultaneously)
   const [labelMode, setLabelMode] = useState('hover');
@@ -762,6 +918,220 @@ export default function MultiDevice3DTopologyScene({
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
   const [drawerTab, setDrawerTab] = useState('interconnects'); // 'interconnects' | 'hardware' | 'clusters'
   const [searchFilter, setSearchFilter] = useState('');
+
+  // 3D Layout State (persisted to localStorage + PostgreSQL)
+  const [layout3D, setLayout3D] = useState(() => {
+    try {
+      const raw = localStorage.getItem(LAYOUT_3D_STORAGE_KEY);
+      if (raw) return mergeWithDefault3DLayout(JSON.parse(raw));
+    } catch {
+      // ignore
+    }
+    return structuredClone(DEFAULT_3D_LAYOUT);
+  });
+
+  const [saveStatus, setSaveStatus] = useState('Saved');
+  const [active3DDrag, setActive3DDrag] = useState(null);
+  const drag3DRef = useRef(null);
+
+  // Fetch saved 3D layout from PostgreSQL on mount
+  useEffect(() => {
+    let cancelled = false;
+    fetch(API_3D_LAYOUT_ENDPOINT)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((res) => {
+        if (!cancelled && res?.layoutData && Object.keys(res.layoutData).length > 0) {
+          const merged = mergeWithDefault3DLayout(res.layoutData);
+          setLayout3D(merged);
+          try {
+            localStorage.setItem(LAYOUT_3D_STORAGE_KEY, JSON.stringify(merged));
+          } catch {
+            // ignore
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Save 3D layout to localStorage + PostgreSQL
+  const persist3DLayout = useCallback((nextLayout) => {
+    setSaveStatus('Saving...');
+    try {
+      localStorage.setItem(LAYOUT_3D_STORAGE_KEY, JSON.stringify(nextLayout));
+    } catch {
+      // ignore
+    }
+    fetch(API_3D_LAYOUT_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ layoutData: nextLayout })
+    })
+      .then(() => setSaveStatus('Saved in SQL ✓'))
+      .catch(() => setSaveStatus('Saved Locally ✓'));
+  }, []);
+
+  // Start dragging a 3D Square Zone Base
+  const handleStartPadDrag3D = useCallback((e, padId) => {
+    e.stopPropagation();
+    const hit = new THREE.Vector3();
+    if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return;
+    if (controlsRef.current) controlsRef.current.enabled = false;
+
+    setLayout3D((curr) => {
+      const pad = curr.pads[padId] || DEFAULT_3D_LAYOUT.pads[padId];
+      const info = {
+        kind: 'pad',
+        id: padId,
+        startX: hit.x,
+        startZ: hit.z,
+        origX: pad.cx,
+        origZ: pad.cz,
+        moved: false
+      };
+      drag3DRef.current = info;
+      setActive3DDrag(info);
+      return curr;
+    });
+  }, []);
+
+  // Start dragging an individual 3D Device (clamped near its Square Base)
+  const handleStartDeviceDrag3D = useCallback((e, deviceId, onClickCallback) => {
+    e.stopPropagation();
+    const hit = new THREE.Vector3();
+    if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return;
+    if (controlsRef.current) controlsRef.current.enabled = false;
+
+    setLayout3D((curr) => {
+      const dev = curr.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
+      if (!dev) return curr;
+      const info = {
+        kind: 'device',
+        id: deviceId,
+        padId: dev.padId,
+        startX: hit.x,
+        startZ: hit.z,
+        origX: dev.dx,
+        origZ: dev.dz,
+        moved: false,
+        onClickCallback
+      };
+      drag3DRef.current = info;
+      setActive3DDrag(info);
+      return curr;
+    });
+  }, []);
+
+  // Move handler on the 3D Floor Capture Plane while dragging
+  const handleFloorPointerMove3D = useCallback((e) => {
+    const current = drag3DRef.current;
+    if (!current) return;
+    e.stopPropagation();
+
+    const hit = e.point;
+    const deltaX = hit.x - current.startX;
+    const deltaZ = hit.z - current.startZ;
+
+    if (Math.hypot(deltaX, deltaZ) > 0.16) {
+      current.moved = true;
+    }
+
+    if (current.kind === 'pad') {
+      const nextCx = +clamp(current.origX + deltaX, -18, 18).toFixed(2);
+      const nextCz = +clamp(current.origZ + deltaZ, -14, 14).toFixed(2);
+      setLayout3D((prev) => ({
+        ...prev,
+        pads: {
+          ...prev.pads,
+          [current.id]: {
+            ...prev.pads[current.id],
+            cx: nextCx,
+            cz: nextCz
+          }
+        }
+      }));
+    } else if (current.kind === 'device') {
+      const spec = DEFAULT_3D_LAYOUT.devices[current.id] || {
+        maxDx: 4.0,
+        maxDz: 4.0
+      };
+      const nextDx = +clamp(current.origX + deltaX, -spec.maxDx, spec.maxDx).toFixed(2);
+      const nextDz = +clamp(current.origZ + deltaZ, -spec.maxDz, spec.maxDz).toFixed(2);
+      setLayout3D((prev) => ({
+        ...prev,
+        devices: {
+          ...prev.devices,
+          [current.id]: {
+            ...prev.devices[current.id],
+            dx: nextDx,
+            dz: nextDz
+          }
+        }
+      }));
+    }
+  }, []);
+
+  // Finalize 3D drag on pointerup anywhere
+  useEffect(() => {
+    if (!active3DDrag) return;
+    const handleWindowPointerUp = () => {
+      if (controlsRef.current) controlsRef.current.enabled = true;
+      const current = drag3DRef.current;
+      drag3DRef.current = null;
+      setActive3DDrag(null);
+      if (!current) return;
+
+      if (!current.moved && current.kind === 'device' && current.onClickCallback) {
+        current.onClickCallback();
+      } else if (current.moved) {
+        setLayout3D((latest) => {
+          persist3DLayout(latest);
+          return latest;
+        });
+      }
+    };
+    window.addEventListener('pointerup', handleWindowPointerUp);
+    return () => window.removeEventListener('pointerup', handleWindowPointerUp);
+  }, [active3DDrag, persist3DLayout]);
+
+  // 1-Click Swap Purplish Colocation Base & Cyan AP Base in 3D
+  const handleSwapColoAndAp3D = () => {
+    setLayout3D((prev) => {
+      const isDefault = prev.pads.apZone.cz < prev.pads.coloZone.cz;
+      const nextLayout = {
+        ...prev,
+        pads: {
+          ...prev.pads,
+          coloZone: {
+            ...prev.pads.coloZone,
+            cz: isDefault ? -5.0 : 5.5
+          },
+          apZone: {
+            ...prev.pads.apZone,
+            cz: isDefault ? 2.8 : -2.2
+          }
+        }
+      };
+      persist3DLayout(nextLayout);
+      return nextLayout;
+    });
+  };
+
+  // Reset 3D Layout to Default
+  const handleReset3DLayout = () => {
+    const fresh = structuredClone(DEFAULT_3D_LAYOUT);
+    setLayout3D(fresh);
+    try {
+      localStorage.removeItem(LAYOUT_3D_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    fetch(API_3D_LAYOUT_ENDPOINT, { method: 'DELETE' })
+      .then(() => setSaveStatus('Reset ✓'))
+      .catch(() => setSaveStatus('Reset ✓'));
+  };
 
   // Build unified multi-switch & multi-campus topology graph
   const globalGraph = useMemo(() => {
@@ -853,33 +1223,37 @@ export default function MultiDevice3DTopologyScene({
     return wlNode?.attachedEndpoints || [];
   }, [wlNode]);
 
-  // 3D Coordinates for Every Device in the Scene
+  // Compute live 3D Coordinates for Every Device from its Parent Square Base + Relative Device Offset
   const positions = useMemo(() => {
-    const corePos = [-6.8, 0.2, -5.2];
-    const wlPos = [-4.2, 0.2, 1.4];
-    const wsPos = [-8.6, 0.2, 5.4];
+    const getPos = (deviceId) => {
+      const dev = layout3D.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
+      const pad = layout3D.pads[dev.padId] || DEFAULT_3D_LAYOUT.pads[dev.padId];
+      return [+(pad.cx + dev.dx).toFixed(2), 0.2, +(pad.cz + dev.dz).toFixed(2)];
+    };
+
+    const corePos = getPos('coreNode');
+    const wlPos = getPos('wlNode');
+    const wsPos = getPos('wsNode');
 
     // 7 Wi-Fi 6 APs arranged on the Right Access Zone Pad
-    const apPositions = attachedAps.map((ap, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
-      const x = 4.3 + col * 4.4;
-      const z = -6.0 + row * 2.55;
+    const apPositions = attachedAps.slice(0, 7).map((ap, idx) => {
+      const deviceId = `ap-${idx}`;
       return {
+        deviceId,
         ap,
-        pos: [x, 0.2, z]
+        pos: getPos(deviceId)
       };
     });
 
-    // Colocation & WAN Sites on the Bottom-Right Pad
+    // Colocation & WAN Sites on the Purple Colocation Pad
     const coloSites = GLOBAL_SITES.filter((s) =>
       ['Halsey165', 'Hastings', 'Florham', 'VancOakridge'].includes(s.code)
-    ).map((site, idx) => {
-      const col = idx % 2;
-      const row = Math.floor(idx / 2);
+    ).map((site) => {
+      const deviceId = `colo-${site.code}`;
       return {
+        deviceId,
         site,
-        pos: [4.3 + col * 4.4, 0.2, 4.2 + row * 2.7]
+        pos: getPos(deviceId)
       };
     });
 
@@ -890,9 +1264,9 @@ export default function MultiDevice3DTopologyScene({
       apPositions,
       coloSites
     };
-  }, [attachedAps]);
+  }, [attachedAps, layout3D]);
 
-  // Build 3D Conduits Connecting Exact Port Positions
+  // Build 3D Conduits Connecting Exact Live Device Positions
   const conduits3D = useMemo(() => {
     const list = [];
 
@@ -1033,7 +1407,7 @@ export default function MultiDevice3DTopologyScene({
   return (
     <div className="relative w-full h-full flex flex-col bg-[#050b18] rounded-xl border border-slate-800/90 overflow-hidden shadow-2xl">
       {/* ===================================================================
-          TOP COMPACT HUD BAR: 3D CAMERA PRESETS, LABEL TOGGLES & DRAWER TOGGLE
+          TOP COMPACT HUD BAR: 3D CAMERA PRESETS, DRAG & SAVE, LABEL TOGGLES
          =================================================================== */}
       <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-slate-950/95 border-b border-slate-800/90 text-xs z-20 shrink-0">
         <div className="flex flex-wrap items-center gap-1.5">
@@ -1041,12 +1415,12 @@ export default function MultiDevice3DTopologyScene({
             <Sparkles className="w-3 h-3" /> 3D MULTI-DEVICE CAMERA
           </span>
           {[
-            { id: 'blueprint-iso', label: 'Isometric Blueprint 3D' },
+            { id: 'blueprint-iso', label: 'Isometric 3D' },
             { id: 'metro-fabric', label: 'Core + Switches' },
-            { id: 'switch-trunks', label: 'Switch Trunks (A↔B)' },
-            { id: 'wifi-fleet', label: 'Wi-Fi 6 AP Fleet (7)' },
+            { id: 'switch-trunks', label: 'Trunks (A↔B)' },
+            { id: 'wifi-fleet', label: 'Wi-Fi 6 APs (7)' },
             { id: 'top-blueprint', label: 'Top Plan (90°)' },
-            { id: 'front-elevation', label: 'Front Elevation' }
+            { id: 'front-elevation', label: 'Front' }
           ].map((preset) => (
             <button
               key={preset.id}
@@ -1055,7 +1429,7 @@ export default function MultiDevice3DTopologyScene({
                 setFocusTarget(null);
                 setCameraPreset(preset.id);
               }}
-              className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${
+              className={`px-2 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${
                 cameraPreset === preset.id && !focusTarget
                   ? 'bg-sky-600 text-white shadow'
                   : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
@@ -1064,6 +1438,32 @@ export default function MultiDevice3DTopologyScene({
               {preset.label}
             </button>
           ))}
+
+          {/* 3D Drag & Save Controls */}
+          <button
+            type="button"
+            onClick={handleSwapColoAndAp3D}
+            className="px-2 py-1 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/50 font-mono font-bold text-[10px] flex items-center gap-1 cursor-pointer transition"
+            title="Swap the Purplish Colocation Base and Cyan Access Point Base in 3D space"
+          >
+            <ArrowUpDown className="w-3 h-3 text-purple-300" />
+            Swap Colo ▲ / AP ▼
+          </button>
+
+          <button
+            type="button"
+            onClick={handleReset3DLayout}
+            className="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[10px] flex items-center gap-1 cursor-pointer transition"
+            title="Reset all dragged 3D bases and devices back to default coordinates"
+          >
+            <RotateCcw className="w-3 h-3" />
+            Reset 3D
+          </button>
+
+          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] flex items-center gap-1">
+            <Save className="w-3 h-3" />
+            {saveStatus}
+          </span>
         </div>
 
         {/* Right Controls: 4-Mode Label Display Selector + Trunk/Zone Toggles + Drawer Toggle */}
@@ -1152,7 +1552,10 @@ export default function MultiDevice3DTopologyScene({
          =================================================================== */}
       <div className="relative flex-1 min-h-0 flex overflow-hidden">
         {/* 3D WebGL Viewport (Expands to 100% width when drawer is collapsed) */}
-        <div className="relative flex-1 h-full min-w-0">
+        <div
+          className="relative flex-1 h-full min-w-0"
+          style={{ cursor: active3DDrag ? 'grabbing' : 'default' }}
+        >
           <Canvas shadows dpr={[1, 2]}>
             <color attach="background" args={[bgColor]} />
             <fog attach="fog" args={[bgColor, 38, 72]} />
@@ -1184,6 +1587,18 @@ export default function MultiDevice3DTopologyScene({
             <pointLight position={[-6, 6, 2]} intensity={1.1} color="#10b981" distance={22} />
             <pointLight position={[6, 6, -2]} intensity={0.9} color="#38bdf8" distance={22} />
 
+            {/* Invisible Full-Floor Raycast Plane Active During 3D Base/Device Drag */}
+            {active3DDrag && (
+              <mesh
+                position={[0, 0.2, 0]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                onPointerMove={handleFloorPointerMove3D}
+              >
+                <planeGeometry args={[200, 200]} />
+                <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+              </mesh>
+            )}
+
             {/* Blueprint Engineering Floor Grid */}
             <Grid
               position={[0, -0.18, 0]}
@@ -1202,20 +1617,29 @@ export default function MultiDevice3DTopologyScene({
                 ZONE PAD 1: TIER 1 CAMPUS CORE ZONE (tcore-9600.net.fdu.edu)
                =============================================================== */}
             <ZonePlatform3D
-              position={[-6.8, 0, -5.2]}
-              size={[8.2, 0.36, 5.2]}
+              padId="coreZone"
+              position={[layout3D.pads.coreZone.cx, 0, layout3D.pads.coreZone.cz]}
+              size={[layout3D.pads.coreZone.w, 0.36, layout3D.pads.coreZone.d]}
               baseColor="#17162e"
               rimColor="#fb923c"
               title="ZONE 1 • TIER 1 CAMPUS CORE (METRO)"
-              subtitle="Cisco C9606R Modular Core • Dual 25G SFP28 Fiber Trunks"
+              subtitle="Drag Base to Move Zone • Drag Core Tower Inside Base"
               showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coreZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
             />
 
             <CoreChassis9606R3D
+              deviceId="coreNode"
               node={coreNode}
               position={positions.corePos}
               isSelected={activeEntity?.id === coreNode.id}
+              isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
               onSelect={handleSelectEntity}
+              onStartDeviceDrag={handleStartDeviceDrag3D}
               labelMode={labelMode}
             />
 
@@ -1224,33 +1648,47 @@ export default function MultiDevice3DTopologyScene({
                 (T-BAN-2FL-WL + T-BAN-2FL-WorkStudy-C9300)
                =============================================================== */}
             <ZonePlatform3D
-              position={[-6.4, 0, 3.4]}
-              size={[9.8, 0.36, 8.6]}
+              padId="switchZone"
+              position={[layout3D.pads.switchZone.cx, 0, layout3D.pads.switchZone.cz]}
+              size={[layout3D.pads.switchZone.w, 0.36, layout3D.pads.switchZone.d]}
               baseColor="#091d34"
               rimColor="#10b981"
               title="ZONE 2 • BANCROFT HALL SWITCH FABRIC (2× POLLED C9300-24UX)"
               subtitle="Verified 10G Trunk: Te1/0/20 ↔ Te1/0/24 (VLAN 133 Native)"
               showZoneTitles={showZoneTitles}
+              isDraggingThisPad={
+                active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
+              }
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'switchZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
             />
 
             {wlNode && (
               <SwitchC9300Node3D
+                deviceId="wlNode"
                 node={wlNode}
                 position={positions.wlPos}
                 isSelected={activeEntity?.id === wlNode.id}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
                 isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
                 onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
                 labelMode={labelMode}
               />
             )}
 
             {workStudyNode && (
               <SwitchC9300Node3D
+                deviceId="wsNode"
                 node={workStudyNode}
                 position={positions.wsPos}
                 isSelected={activeEntity?.id === workStudyNode.id}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
                 isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
                 onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
                 labelMode={labelMode}
               />
             )}
@@ -1277,22 +1715,31 @@ export default function MultiDevice3DTopologyScene({
                 ZONE PAD 3: WI-FI 6 UPOE ACCESS LAYER FLEET (7 APs • 194.0W)
                =============================================================== */}
             <ZonePlatform3D
-              position={[6.5, 0, -2.2]}
-              size={[9.6, 0.36, 9.8]}
+              padId="apZone"
+              position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
+              size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
               baseColor="#081c29"
               rimColor="#38bdf8"
               title="ZONE 3 • WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
               subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
               showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
             />
 
-            {positions.apPositions.map(({ ap, pos }) => (
+            {positions.apPositions.map(({ deviceId, ap, pos }) => (
               <WirelessApNode3D
                 key={ap.hostname}
+                deviceId={deviceId}
                 ap={ap}
                 position={pos}
                 isSelected={activeEntity?.id === ap.hostname}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
                 onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
                 labelMode={labelMode}
               />
             ))}
@@ -1302,22 +1749,31 @@ export default function MultiDevice3DTopologyScene({
                 (Halsey165, Hastings, Florham, VancOakridge)
                =============================================================== */}
             <ZonePlatform3D
-              position={[6.5, 0, 5.5]}
-              size={[9.6, 0.36, 5.2]}
+              padId="coloZone"
+              position={[layout3D.pads.coloZone.cx, 0, layout3D.pads.coloZone.cz]}
+              size={[layout3D.pads.coloZone.w, 0.36, layout3D.pads.coloZone.d]}
               baseColor="#19102c"
               rimColor="#a855f7"
               title="ZONE 4 • COLOCATIONS & MULTI-CAMPUS WAN (US & CANADA)"
               subtitle="Halsey165 (US) • Hastings (CA) • Florham • VancOakridge"
               showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
             />
 
-            {positions.coloSites.map(({ site, pos }) => (
+            {positions.coloSites.map(({ deviceId, site, pos }) => (
               <ColocationHub3D
                 key={site.code}
+                deviceId={deviceId}
                 site={site}
                 position={pos}
                 isSelected={activeEntity?.id === site.code}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
                 onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
                 labelMode={labelMode}
               />
             ))}
@@ -1348,10 +1804,10 @@ export default function MultiDevice3DTopologyScene({
             />
           </Canvas>
 
-          {/* Bottom-Left Compact 3D Legend & Camera Instructions Pill */}
+          {/* Bottom-Left Compact 3D Legend & Drag Instructions Pill */}
           <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 text-[11px] font-mono backdrop-blur-md pointer-events-none">
             <span className="text-sky-300 font-bold">
-              3D Camera: Left-Drag Orbit • Right-Drag Pan • Scroll Zoom • Click Any 3D Device or Conduit
+              ✥ Drag Any 3D Square Base or Device (Auto-Saves to SQL) • Click Device to Hover Info • Drag Empty Space to Orbit
             </span>
             <span className="flex items-center gap-1 text-amber-300">
               <span className="w-2.5 h-1.5 rounded bg-orange-500 inline-block" /> 25G Fiber Core Uplinks
@@ -1366,7 +1822,7 @@ export default function MultiDevice3DTopologyScene({
         </div>
 
         {/* ===================================================================
-            COLLAPSIBLE CLICK-TO-INSPECT DEVICE & INTERCONNECT DRAWER
+             COLLAPSIBLE CLICK-TO-INSPECT DEVICE & INTERCONNECT DRAWER
             (Displays Physical Interconnects, Hardware Specs, or 300-Neighbor Building Clusters)
            =================================================================== */}
         {isDrawerOpen && (
@@ -1421,7 +1877,7 @@ export default function MultiDevice3DTopologyScene({
                     : 'bg-slate-900 text-slate-400 hover:text-white'
                 }`}
               >
-                Hardware & CLI
+                Hardware &amp; CLI
               </button>
               <button
                 type="button"
@@ -1451,7 +1907,7 @@ export default function MultiDevice3DTopologyScene({
                       </span>
                       {activeEntity.data.isPolled ? (
                         <span className="text-xs font-mono font-bold text-emerald-400 flex items-center gap-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Polled & Stored ({activeEntity.data.serialNumber})
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Polled &amp; Stored ({activeEntity.data.serialNumber})
                         </span>
                       ) : (
                         <span className="text-xs font-mono font-bold text-amber-300">
@@ -1532,7 +1988,7 @@ export default function MultiDevice3DTopologyScene({
                       {activeEntity.data.attachedEndpoints?.length > 0 && (
                         <div>
                           <div className="text-[10px] font-mono uppercase tracking-wider text-sky-400 font-bold mb-1.5">
-                            Connected Wi-Fi 6 APs & PoE Endpoints ({activeEntity.data.attachedEndpoints.length})
+                            Connected Wi-Fi 6 APs &amp; PoE Endpoints ({activeEntity.data.attachedEndpoints.length})
                           </div>
                           <div className="space-y-1.5">
                             {activeEntity.data.attachedEndpoints.map((ep, idx) => (
@@ -1595,7 +2051,7 @@ export default function MultiDevice3DTopologyScene({
                         <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">
                           <span className="text-[10px] text-slate-400 block">IOS-XE Version</span>
                           <span className="text-xs font-bold text-amber-300">
-                            {activeEntity.data.iosVersion || '17.15.04'}
+                            {formatShortIosVersion(activeEntity.data.iosVersion)}
                           </span>
                         </div>
                         <div className="p-2.5 rounded-lg bg-slate-900 border border-slate-800">

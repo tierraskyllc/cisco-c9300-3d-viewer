@@ -553,8 +553,136 @@ app.post('/api/devices/live-ssh-poll', async (req, res) => {
   }
 });
 
+// Local fallback file for saved topology layouts when Postgres is unreachable
+const LOCAL_LAYOUTS_PATH = path.join(__dirname, 'local-layouts-fallback.json');
+
+function readLocalLayouts() {
+  try {
+    if (fs.existsSync(LOCAL_LAYOUTS_PATH)) {
+      return JSON.parse(fs.readFileSync(LOCAL_LAYOUTS_PATH, 'utf8'));
+    }
+  } catch {
+    // ignore
+  }
+  return {};
+}
+
+function writeLocalLayouts(layouts) {
+  try {
+    fs.writeFileSync(LOCAL_LAYOUTS_PATH, JSON.stringify(layouts, null, 2), 'utf8');
+  } catch {
+    // ignore
+  }
+}
+
+// Get Saved Custom Topology Layout (2D Isometric Blueprint or 3D Multi-Device Scene)
+app.get('/api/topology/layouts/:key', async (req, res) => {
+  const { key } = req.params;
+  try {
+    if (pgConnected) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS topology_layouts (
+          layout_key VARCHAR(128) PRIMARY KEY,
+          layout_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      const { rows } = await pool.query(
+        'SELECT layout_data, updated_at FROM topology_layouts WHERE layout_key = $1',
+        [key]
+      );
+      if (rows.length > 0) {
+        return res.json({
+          ok: true,
+          storageEngine: 'PostgreSQL 16',
+          layoutKey: key,
+          layoutData: rows[0].layout_data,
+          updatedAt: rows[0].updated_at
+        });
+      }
+    }
+  } catch (err) {
+    console.warn('PG layout read warning:', err.message);
+  }
+
+  const localLayouts = readLocalLayouts();
+  return res.json({
+    ok: true,
+    storageEngine: pgConnected ? 'PostgreSQL 16' : 'Local JSON Store',
+    layoutKey: key,
+    layoutData: localLayouts[key] || null,
+    updatedAt: null
+  });
+});
+
+// Save / Update Custom Topology Layout (2D Isometric Blueprint or 3D Multi-Device Scene)
+app.post('/api/topology/layouts/:key', async (req, res) => {
+  const { key } = req.params;
+  const { layoutData = {} } = req.body || {};
+
+  // Always update local fallback cache as well
+  const localLayouts = readLocalLayouts();
+  localLayouts[key] = layoutData;
+  writeLocalLayouts(localLayouts);
+
+  try {
+    if (pgConnected) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS topology_layouts (
+          layout_key VARCHAR(128) PRIMARY KEY,
+          layout_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+          updated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `);
+      const { rows } = await pool.query(
+        `INSERT INTO topology_layouts (layout_key, layout_data, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (layout_key) DO UPDATE SET
+           layout_data = EXCLUDED.layout_data,
+           updated_at = NOW()
+         RETURNING updated_at`,
+        [key, JSON.stringify(layoutData)]
+      );
+      return res.json({
+        ok: true,
+        storageEngine: 'PostgreSQL 16',
+        layoutKey: key,
+        updatedAt: rows[0]?.updated_at
+      });
+    }
+  } catch (err) {
+    console.warn('PG layout save warning:', err.message);
+  }
+
+  return res.json({
+    ok: true,
+    storageEngine: 'Local JSON Store',
+    layoutKey: key,
+    updatedAt: new Date().toISOString()
+  });
+});
+
+// Reset / Delete Saved Topology Layout
+app.delete('/api/topology/layouts/:key', async (req, res) => {
+  const { key } = req.params;
+  const localLayouts = readLocalLayouts();
+  delete localLayouts[key];
+  writeLocalLayouts(localLayouts);
+
+  try {
+    if (pgConnected) {
+      await pool.query('DELETE FROM topology_layouts WHERE layout_key = $1', [key]);
+    }
+  } catch (err) {
+    console.warn('PG layout delete warning:', err.message);
+  }
+
+  return res.json({ ok: true, layoutKey: key });
+});
+
 initDatabase().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Cisco C9300 Topology & CLI Parser API listening on http://localhost:${PORT}`);
   });
 });
+

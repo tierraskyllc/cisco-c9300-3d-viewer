@@ -73,3 +73,10 @@ CREATE TABLE IF NOT EXISTS cdp_neighbors (
   power_watts DOUBLE PRECISION,
   UNIQUE(device_id, local_interface, neighbor_device_id)
 );
+
+CREATE TABLE IF NOT EXISTS topology_layouts (
+  layout_key VARCHAR(128) PRIMARY KEY,
+  layout_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
