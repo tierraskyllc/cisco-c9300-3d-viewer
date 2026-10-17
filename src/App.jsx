@@ -550,7 +550,7 @@ export default function App() {
                 explodeFactor={explodeFactor}
                 xrayMode={xrayMode}
                 showAirflow={showAirflow}
-                showLabels={showLabels}
+                showLabels={showLabels && !isUploaderOpen}
                 showPatchCables={showPatchCables}
                 psuStates={psuStates}
                 fanFaults={fanFaults}

@@ -231,7 +231,7 @@ function FanModule3D({
       </mesh>
 
       {showLabels && index === 1 && (
-        <Html position={[0, 1.05, -0.2]} center distanceFactor={13}>
+        <Html position={[0, 1.05, -0.2]} center distanceFactor={13} zIndexRange={[10, 0]}>
           <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-cyan-500/40 text-[10px] font-mono text-cyan-300 whitespace-nowrap shadow-lg pointer-events-none">
             #6 3× Hot-Swap Fans (FAN-T2=)
           </div>
@@ -364,7 +364,7 @@ function PowerSupplyModule3D({
       )}
 
       {showLabels && id === 'psu-1' && (
-        <Html position={[1.6, 1.05, -0.2]} center distanceFactor={13}>
+        <Html position={[1.6, 1.05, -0.2]} center distanceFactor={13} zIndexRange={[10, 0]}>
           <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-emerald-500/40 text-[10px] font-mono text-emerald-300 whitespace-nowrap shadow-lg pointer-events-none">
             #11 Dual Hot-Swap PSU Bays (PS1 / PS2)
           </div>
@@ -674,8 +674,8 @@ function SwitchScene({
                 <meshStandardMaterial color="#f59e0b" metalness={0.85} roughness={0.22} />
               </mesh>
             ))}
-            {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.85, 0]} center distanceFactor={13}>
+            {showLabels && (explodeFactor > 0.2 || xrayMode) && (
+              <Html position={[0, 0.85, 0]} center distanceFactor={13} zIndexRange={[10, 0]}>
                 <div className="px-2 py-0.5 rounded bg-amber-950/90 border border-amber-500/50 text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg pointer-events-none">
                   Cisco UADP 2.0 ASIC (46°C)
                 </div>
@@ -710,8 +710,8 @@ function SwitchScene({
                 <meshStandardMaterial color="#10b981" metalness={0.4} roughness={0.3} />
               </mesh>
             ))}
-            {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.75, 0]} center distanceFactor={13}>
+            {showLabels && (explodeFactor > 0.2 || xrayMode) && (
+              <Html position={[0, 0.75, 0]} center distanceFactor={13} zIndexRange={[10, 0]}>
                 <div className="px-2 py-0.5 rounded bg-blue-950/90 border border-blue-500/50 text-[10px] font-mono text-blue-200 whitespace-nowrap shadow-lg pointer-events-none">
                   x86 CPU + 8GB DRAM (IOS-XE / IOx)
                 </div>
@@ -746,8 +746,8 @@ function SwitchScene({
                 <meshStandardMaterial color="#1e293b" roughness={0.4} />
               </mesh>
             ))}
-            {(explodeFactor > 0.2 || xrayMode) && (
-              <Html position={[0, 0.65, 0]} center distanceFactor={13}>
+            {showLabels && (explodeFactor > 0.2 || xrayMode) && (
+              <Html position={[0, 0.65, 0]} center distanceFactor={13} zIndexRange={[10, 0]}>
                 <div className="px-2 py-0.5 rounded bg-teal-950/90 border border-teal-500/50 text-[10px] font-mono text-teal-200 whitespace-nowrap shadow-lg pointer-events-none">
                   UPOE+ PSE Daughterboard & Magnetics
                 </div>
@@ -818,7 +818,7 @@ function SwitchScene({
             />
           </mesh>
           {showLabels && (
-            <Html position={[-0.3, 0.65, 0]} center distanceFactor={13}>
+            <Html position={[-0.3, 0.65, 0]} center distanceFactor={13} zIndexRange={[10, 0]}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-sky-500/40 text-[10px] font-mono text-sky-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #1 UID Beacon
               </div>
@@ -952,7 +952,7 @@ function SwitchScene({
                 <meshStandardMaterial color="#334155" metalness={0.45} roughness={0.45} />
               </mesh>
               {showLabels && (
-                <Html position={[0, 0, 0.08]} center distanceFactor={13}>
+                <Html position={[0, 0, 0.08]} center distanceFactor={13} zIndexRange={[10, 0]}>
                   <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-slate-600/60 text-[9px] font-mono text-slate-200 whitespace-nowrap pointer-events-none">
                     Cisco Catalyst {switchModelId} (24-Port Faceplate)
                   </div>
@@ -1064,7 +1064,7 @@ function SwitchScene({
           })}
 
           {showLabels && (
-            <Html position={[is24PortChassis ? 1.25 : -1.2, 1.05, 6.05]} center distanceFactor={13}>
+            <Html position={[is24PortChassis ? 1.25 : -1.2, 1.05, 6.05]} center distanceFactor={13} zIndexRange={[10, 0]}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-blue-500/40 text-[10px] font-mono text-blue-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #5 {totalPortCount}× RJ-45 Downlink Ports ({portPrefixLabel}1–{totalPortCount})
               </div>
@@ -1168,7 +1168,7 @@ function SwitchScene({
             ))}
 
           {showLabels && (
-            <Html position={[0, 1.05, 0.1]} center distanceFactor={13}>
+            <Html position={[0, 1.05, 0.1]} center distanceFactor={13} zIndexRange={[10, 0]}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-indigo-500/40 text-[10px] font-mono text-indigo-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #6 Modular Uplink ({networkModuleId})
               </div>
@@ -1241,7 +1241,7 @@ function SwitchScene({
             </group>
           ))}
           {showLabels && (
-            <Html position={[0, 0.9, -0.1]} center distanceFactor={13}>
+            <Html position={[0, 0.9, -0.1]} center distanceFactor={13} zIndexRange={[10, 0]}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-purple-500/40 text-[10px] font-mono text-purple-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #10 StackWise-480 & #7 StackPower
               </div>
@@ -1369,7 +1369,7 @@ function SwitchScene({
           </mesh>
 
           {showLabels && (
-            <Html position={[0, 1.05, -0.1]} center distanceFactor={13}>
+            <Html position={[0, 1.05, -0.1]} center distanceFactor={13} zIndexRange={[10, 0]}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-amber-500/40 text-[10px] font-mono text-amber-300 whitespace-nowrap shadow-lg pointer-events-none">
                 #1–5 Console, Gi0/0 Mgmt & 240G SSD
               </div>
@@ -1381,8 +1381,8 @@ function SwitchScene({
       <ContactShadows position={[0, -2.02, 0]} opacity={0.5} scale={32} blur={2.4} far={6} />
 
       {/* Live 3D Hover Tooltip Banner */}
-      {hoveredLabel && (
-        <Html position={[0, 2.8 + explodeFactor * 3.0, 0]} center>
+      {showLabels && hoveredLabel && (
+        <Html position={[0, 2.8 + explodeFactor * 3.0, 0]} center zIndexRange={[10, 0]}>
           <div className="px-3 py-1.5 rounded-lg bg-slate-950/95 border border-blue-500/60 text-xs font-medium text-blue-100 shadow-2xl whitespace-nowrap pointer-events-none">
             {hoveredLabel}
           </div>
