@@ -383,6 +383,7 @@ function SwitchScene({
   onCycleLedMode,
   beaconActive,
   onToggleBeacon,
+  switchModelId = 'C9300-24UX',
   networkModuleId,
   explodeFactor,
   xrayMode,
@@ -406,8 +407,14 @@ function SwitchScene({
     pulseRef.current = Math.sin(state.clock.elapsedTime * 6);
   });
 
-  // Compute LED color for each of the 48 downlink ports based on active Cisco Mode Button state
+  const is24PortChassis = portsData.length <= 24;
+  const totalPortCount = is24PortChassis ? 24 : 48;
+  const portPrefixLabel = portsData[0]?.interfaceName?.replace(/\d+$/, '') || 'Gi1/0/';
+
+  // Compute LED color for each downlink port based on active Cisco Mode Button state
   const getPortLedColor = (port) => {
+    const spdStr = String(port.speed || '').toUpperCase();
+    const dupStr = String(port.duplex || '').toLowerCase();
     switch (ledMode) {
       case 'STAT':
         if (port.status === 'up') return '#10b981';
@@ -416,12 +423,14 @@ function SwitchScene({
         return '#334155';
       case 'SPEED':
         if (port.status === 'down') return '#334155';
-        if (port.speed === '5000' || port.speed === '10000') return '#38bdf8';
-        if (port.speed === '1000') return '#10b981';
-        if (port.speed === '100') return '#84cc16';
-        return '#334155';
+        if (spdStr.includes('10G') || spdStr.includes('5000') || spdStr.includes('10000') || spdStr.includes('2.5G') || spdStr.includes('5G')) {
+          return '#38bdf8';
+        }
+        if (spdStr.includes('1000') || spdStr.includes('1G')) return '#10b981';
+        if (spdStr.includes('100')) return '#84cc16';
+        return '#10b981';
       case 'DUPLX':
-        return port.status !== 'down' && port.duplex === 'full' ? '#10b981' : '#334155';
+        return port.status !== 'down' && dupStr.includes('full') ? '#10b981' : '#334155';
       case 'ACTV':
         return '#10b981';
       case 'STACK':
@@ -442,14 +451,15 @@ function SwitchScene({
     }
   };
 
-  // Compute physical 3D coordinates for the 48 RJ-45 ports (arranged in 4 banks of 12 ports = 2 rows × 6 cols per bank)
+  // Compute physical 3D coordinates for 24 or 48 RJ-45 ports (arranged in 12-port banks: Odd Top Row, Even Bottom Row)
   const portMeshesData = useMemo(() => {
+    const startX = is24PortChassis ? -0.85 : -5.65;
     return portsData.map((port) => {
       const idx = port.portNumber - 1;
       const col = Math.floor(idx / 2);
       const bankIdx = Math.floor(col / 6);
       const isTopRow = idx % 2 === 0;
-      const x = -5.65 + col * 0.36 + bankIdx * 0.24;
+      const x = startX + col * 0.36 + bankIdx * 0.24;
       const y = isTopRow ? 0.24 : -0.24;
       return {
         ...port,
@@ -457,7 +467,7 @@ function SwitchScene({
         position: [x, y, 6.02]
       };
     });
-  }, [portsData]);
+  }, [portsData, is24PortChassis]);
 
   const hasHardwareFault =
     Object.values(fanFaults).some(Boolean) || psuStates.psu1 === 'fault' || psuStates.psu2 === 'fault';
@@ -928,11 +938,31 @@ function SwitchScene({
         </group>
 
         {/* =========================================================
-            6. CENTER 48-PORT RJ-45 DOWNLINK MATRIX (4 BANKS × 12 PORTS)
+            6. CENTER 24-PORT OR 48-PORT RJ-45 DOWNLINK MATRIX
            ========================================================= */}
-        <group name="Front_48_Port_Matrix">
-          {/* PoE / UPOE Color Accent Bars Above & Below the 4 Port Banks */}
-          {[0, 1, 2, 3].map((bankIdx) => {
+        <group name="Front_Downlink_Port_Matrix">
+          {/* For 24-Port Models: Left Front Bezel Brushed Plate (Authentic C9300-24* Faceplate Layout) */}
+          {is24PortChassis && (
+            <group position={[-3.65, 0, 6.01]}>
+              <RoundedBox args={[4.45, 1.18, 0.06]} radius={0.03} smoothness={2}>
+                <meshStandardMaterial color="#475569" metalness={0.5} roughness={0.34} />
+              </RoundedBox>
+              <mesh position={[0, 0, 0.035]}>
+                <boxGeometry args={[4.15, 0.88, 0.02]} />
+                <meshStandardMaterial color="#334155" metalness={0.45} roughness={0.45} />
+              </mesh>
+              {showLabels && (
+                <Html position={[0, 0, 0.08]} center distanceFactor={13}>
+                  <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-slate-600/60 text-[9px] font-mono text-slate-200 whitespace-nowrap pointer-events-none">
+                    Cisco Catalyst {switchModelId} (24-Port Faceplate)
+                  </div>
+                </Html>
+              )}
+            </group>
+          )}
+
+          {/* PoE / UPOE Color Accent Bars Above & Below Active Port Banks (2 Banks for 24-Port, 4 Banks for 48-Port) */}
+          {(is24PortChassis ? [2, 3] : [0, 1, 2, 3]).map((bankIdx) => {
             const bankCenterX = -4.75 + bankIdx * 2.4;
             return (
               <group key={bankIdx}>
@@ -1034,9 +1064,9 @@ function SwitchScene({
           })}
 
           {showLabels && (
-            <Html position={[-1.2, 1.05, 6.05]} center distanceFactor={13}>
+            <Html position={[is24PortChassis ? 1.25 : -1.2, 1.05, 6.05]} center distanceFactor={13}>
               <div className="px-2 py-0.5 rounded bg-slate-900/90 border border-blue-500/40 text-[10px] font-mono text-blue-300 whitespace-nowrap shadow-lg pointer-events-none">
-                #5 48× RJ-45 Downlink Ports (Gi1/0/1–48)
+                #5 {totalPortCount}× RJ-45 Downlink Ports ({portPrefixLabel}1–{totalPortCount})
               </div>
             </Html>
           )}

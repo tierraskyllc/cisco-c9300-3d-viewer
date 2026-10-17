@@ -459,30 +459,59 @@ export function correlateSwitchShowData(rawInputs = {}) {
     statusByIntf[st.interfaceName] = st;
   }
 
-  // Determine switch model SKU (default to C9300-48U if not explicitly matched)
-  const detectedModel =
-    versionInfo.model && /^C9300-48/.test(versionInfo.model)
-      ? versionInfo.model
-      : 'C9300-48U';
-  const isMgig = detectedModel === 'C9300-48UXM';
+  // Determine highest downlink port seen across all parsed show outputs
+  let maxSeenDownlinkPort = 0;
+  let hasTeDownlinks = false;
+  for (const intfKey of [
+    ...Object.keys(statusByIntf),
+    ...Object.keys(runConfigsMap),
+    ...Object.keys(trunksMap),
+    ...Object.keys(cdpByLocalIntf),
+    ...Object.keys(ipByIntf)
+  ]) {
+    const pNum = extractDownlinkPortNumber(intfKey);
+    if (pNum !== null) {
+      if (pNum > maxSeenDownlinkPort) maxSeenDownlinkPort = pNum;
+      if (/^Te/i.test(intfKey)) hasTeDownlinks = true;
+    }
+  }
 
-  // Build normalized 48 Downlink Ports array for 3D Chassis & Topology Viewer
+  // Determine switch model SKU (supports both 24-port and 48-port C9300 models)
+  let detectedModel = 'C9300-48U';
+  if (versionInfo.model && /^C9300/i.test(versionInfo.model)) {
+    detectedModel = versionInfo.model.toUpperCase();
+  } else if (maxSeenDownlinkPort > 0 && maxSeenDownlinkPort <= 24) {
+    detectedModel = hasTeDownlinks ? 'C9300-24UX' : 'C9300-24U';
+  } else if (hasTeDownlinks) {
+    detectedModel = 'C9300-48UXM';
+  }
+
+  const portCount = detectedModel.includes('-24') ? 24 : 48;
+  const isMgig =
+    detectedModel.includes('UX') ||
+    detectedModel.includes('XM') ||
+    hasTeDownlinks;
+
+  // Build normalized Downlink Ports array (24 or 48 ports depending on switch model)
   const ports48 = [];
-  for (let i = 1; i <= 48; i++) {
+  for (let i = 1; i <= portCount; i++) {
     const giName = `Gi1/0/${i}`;
     const teName = `Te1/0/${i}`;
+    const twName = `Tw1/0/${i}`;
     const intfName =
       statusByIntf[teName] || runConfigsMap[teName] || cdpByLocalIntf[teName]
         ? teName
+        : statusByIntf[twName] || runConfigsMap[twName] || cdpByLocalIntf[twName]
+        ? twName
         : isMgig
         ? teName
         : giName;
 
-    const st = statusByIntf[intfName] || statusByIntf[giName] || statusByIntf[teName] || null;
-    const cfg = runConfigsMap[intfName] || runConfigsMap[giName] || runConfigsMap[teName] || null;
-    const cdp = cdpByLocalIntf[intfName] || cdpByLocalIntf[giName] || cdpByLocalIntf[teName] || null;
-    const trk = trunksMap[intfName] || trunksMap[giName] || trunksMap[teName] || null;
-    const ipInfo = ipByIntf[intfName] || ipByIntf[giName] || ipByIntf[teName] || null;
+    const st = statusByIntf[intfName] || statusByIntf[giName] || statusByIntf[teName] || statusByIntf[twName] || null;
+    const cfg = runConfigsMap[intfName] || runConfigsMap[giName] || runConfigsMap[teName] || runConfigsMap[twName] || null;
+    const cdp = cdpByLocalIntf[intfName] || cdpByLocalIntf[giName] || cdpByLocalIntf[teName] || cdpByLocalIntf[twName] || null;
+    const trk = trunksMap[intfName] || trunksMap[giName] || trunksMap[teName] || trunksMap[twName] || null;
+    const ipInfo = ipByIntf[intfName] || ipByIntf[giName] || ipByIntf[teName] || ipByIntf[twName] || null;
 
     // Determine operational status
     let status = 'down';
@@ -631,6 +660,7 @@ export function correlateSwitchShowData(rawInputs = {}) {
     device: {
       hostname: versionInfo.hostname || 'C9300-CAMPUS-SW01',
       model: detectedModel,
+      portCount,
       serialNumber: versionInfo.serialNumber || 'FOC2619Y4L2',
       iosVersion: versionInfo.iosVersion || '17.12.04',
       uptime: versionInfo.uptime || '48 days, 14 hours, 22 minutes',

@@ -5,7 +5,8 @@ import ControlPanel from './components/ControlPanel';
 import ShowCommandUploader from './components/ShowCommandUploader';
 import {
   SWITCH_MODELS,
-  LED_MODES
+  LED_MODES,
+  getPortCountForModel
 } from './data/c9300HardwareData';
 import {
   correlateSwitchShowData,
@@ -24,7 +25,8 @@ import {
   Database,
   Sun,
   Maximize2,
-  Grid3X3
+  Grid3X3,
+  Wifi
 } from 'lucide-react';
 
 export default function App() {
@@ -34,7 +36,11 @@ export default function App() {
   );
   const [savedDevices, setSavedDevices] = useState([]);
   const [storageEngine, setStorageEngine] = useState('PostgreSQL 16 (Docker)');
+  const [serverLanIp, setServerLanIp] = useState('');
   const [isUploaderOpen, setIsUploaderOpen] = useState(false);
+  const [uploaderMode, setUploaderMode] = useState('manual');
+  const [uploaderTargetIp, setUploaderTargetIp] = useState('');
+  const [uploaderTargetHostname, setUploaderTargetHostname] = useState('');
 
   // Core Switch Configuration State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
@@ -62,8 +68,15 @@ export default function App() {
     fan3: false
   });
 
-  // Load saved devices from PostgreSQL API on mount
+  // Load saved devices & server LAN IP from PostgreSQL API on mount
   useEffect(() => {
+    fetch('/api/health')
+      .then((r) => r.json())
+      .then((h) => {
+        if (h.serverLanIp) setServerLanIp(h.serverLanIp);
+      })
+      .catch(() => {});
+
     fetch('/api/devices')
       .then((r) => r.json())
       .then((data) => {
@@ -71,10 +84,15 @@ export default function App() {
         if (Array.isArray(data.devices) && data.devices.length > 0) {
           setSavedDevices(data.devices);
           const first = data.devices[0];
-          if (first.parsed_snapshot && first.parsed_snapshot.ports48) {
-            setParsedSwitchData(first.parsed_snapshot);
-            if (SWITCH_MODELS[first.model]) {
-              setSwitchModelId(first.model);
+          const snap =
+            first.raw_outputs && Object.keys(first.raw_outputs).length > 0
+              ? correlateSwitchShowData(first.raw_outputs)
+              : first.parsed_snapshot;
+          if (snap && snap.ports48) {
+            setParsedSwitchData(snap);
+            const detectedModel = snap.device?.model || first.model;
+            if (detectedModel) {
+              setSwitchModelId(detectedModel);
             }
           }
         }
@@ -84,7 +102,50 @@ export default function App() {
       });
   }, []);
 
-  const currentPorts = parsedSwitchData.ports48;
+  // Dynamically size ports array to 24 or 48 ports based on the active switch model
+  const activePortCount = getPortCountForModel(switchModelId);
+  const currentPorts = useMemo(() => {
+    const base = parsedSwitchData.ports48 || [];
+    if (base.length === activePortCount) return base;
+    if (base.length > activePortCount) return base.slice(0, activePortCount);
+
+    // If switching SKU selector from a 24-port model to a 48-port model, pad ports 25..48
+    const padded = [...base];
+    const isMgig = switchModelId.includes('UX') || switchModelId.includes('XM');
+    for (let i = base.length + 1; i <= activePortCount; i++) {
+      const intfName = isMgig ? `Te1/0/${i}` : `Gi1/0/${i}`;
+      padded.push({
+        portNumber: i,
+        interfaceName: intfName,
+        row: i % 2 === 1 ? 'Top Row (Odd)' : 'Bottom Row (Even)',
+        bank: Math.ceil(i / 12),
+        status: 'down',
+        operStatusRaw: 'notconnect',
+        description: 'No Description Set',
+        speed: 'auto',
+        configuredSpeed: 'auto',
+        duplex: 'auto',
+        mediaType: isMgig ? '100/1000/2.5G/5G/10GBaseTX' : '10/100/1000BaseTX',
+        vlan: 1,
+        vlanName: 'default',
+        voiceVlan: null,
+        isTrunk: false,
+        trunkDetails: null,
+        poeClass: 'Off',
+        poeWatts: 0,
+        endpointType: 'none',
+        connectedDevice: 'Not Connected (RJ-45 Open)',
+        cdpNeighbor: null,
+        hostname: '—',
+        ipAddress: '—',
+        macAddress: `00:50:56:14:${(20 + i).toString(16)}:${(40 + i).toString(16)}`,
+        cableLengthMeters: 0,
+        cableCategory: 'Cat6 UTP',
+        runningConfig: `interface ${intfName}\n switchport access vlan 1\n switchport mode access`
+      });
+    }
+    return padded;
+  }, [parsedSwitchData.ports48, activePortCount, switchModelId]);
 
   const handleModelChange = (newModelId) => {
     setSwitchModelId(newModelId);
@@ -116,7 +177,7 @@ export default function App() {
 
   const handleDeviceIngested = (deviceRecord, newParsedData) => {
     setParsedSwitchData(newParsedData);
-    if (SWITCH_MODELS[newParsedData.device.model]) {
+    if (newParsedData.device?.model) {
       setSwitchModelId(newParsedData.device.model);
     }
     setSavedDevices((prev) => {
@@ -129,12 +190,23 @@ export default function App() {
 
   const handleSelectSavedDevice = (serialNumber) => {
     const found = savedDevices.find((d) => d.serial_number === serialNumber);
-    if (found && found.parsed_snapshot) {
-      setParsedSwitchData(found.parsed_snapshot);
-      if (SWITCH_MODELS[found.model]) {
-        setSwitchModelId(found.model);
+    if (found) {
+      const snap =
+        found.raw_outputs && Object.keys(found.raw_outputs).length > 0
+          ? correlateSwitchShowData(found.raw_outputs)
+          : found.parsed_snapshot;
+      if (snap) {
+        setParsedSwitchData(snap);
+        setSwitchModelId(snap.device?.model || found.model || 'C9300-48U');
       }
     }
+  };
+
+  const handleOpenLivePoll = (targetIp = '', targetHostname = '') => {
+    setUploaderMode('ssh');
+    setUploaderTargetIp(targetIp || parsedSwitchData.device.mgmtIp || '');
+    setUploaderTargetHostname(targetHostname || parsedSwitchData.device.hostname || '');
+    setIsUploaderOpen(true);
   };
 
   // Active Selection (either { type: 'component', id: 'chassis-main' } or { type: 'port', portNumber: 1 })
@@ -159,7 +231,9 @@ export default function App() {
     setLedMode(next.id);
   };
 
-  const switchModel = SWITCH_MODELS[switchModelId] || SWITCH_MODELS['C9300-48U'];
+  const switchModel =
+    SWITCH_MODELS[switchModelId] ||
+    (activePortCount === 24 ? SWITCH_MODELS['C9300-24UX'] : SWITCH_MODELS['C9300-48U']);
 
   // Calculate Total Active PoE Draw and Available PSU PoE Budget
   const totalPoeWatts = useMemo(() => {
@@ -188,8 +262,11 @@ export default function App() {
           <div>
             <div className="flex items-center gap-2">
               <h1 className="text-base font-bold tracking-tight text-white">
-                {parsedSwitchData.device.hostname} — 3D Hardware & Topology Explorer
+                {parsedSwitchData.device.hostname} — {activePortCount}-Port ({switchModelId}) 3D & Topology Explorer
               </h1>
+              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-sky-500/15 text-sky-300 border border-sky-500/30">
+                {activePortCount}-Port Switch
+              </span>
               <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono uppercase rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                 <Database className="w-2.5 h-2.5" /> S/N: {parsedSwitchData.device.serialNumber}
               </span>
@@ -200,14 +277,27 @@ export default function App() {
           </div>
         </div>
 
-        {/* Center/Right Controls: Upload Show Commands + SQL Device Switcher + SKU + View Mode */}
+        {/* Center/Right Controls: Live SSH Poll + Upload Show Commands + SQL Device Switcher + SKU + View Mode */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Primary Action: Upload / Parse 7 Cisco Show Commands */}
+          {/* 1-Click Live SSH Poll Button */}
           <button
-            onClick={() => setIsUploaderOpen(true)}
+            onClick={() => handleOpenLivePoll(parsedSwitchData.device.mgmtIp, parsedSwitchData.device.hostname)}
             className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-xs font-bold text-slate-950 shadow-lg shadow-emerald-500/20 flex items-center gap-1.5 cursor-pointer transition"
+            title="Connect directly to the switch via SSH or configure Switch Self-Push"
           >
-            <Upload className="w-3.5 h-3.5" />
+            <Wifi className="w-3.5 h-3.5" />
+            Live Poll Switch (SSH)
+          </button>
+
+          {/* Manual Upload / Parse 7 Cisco Show Commands */}
+          <button
+            onClick={() => {
+              setUploaderMode('manual');
+              setIsUploaderOpen(true);
+            }}
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-sky-500/40 text-xs font-bold text-sky-200 flex items-center gap-1.5 cursor-pointer transition"
+          >
+            <Upload className="w-3.5 h-3.5 text-sky-400" />
             Upload Show Commands
           </button>
 
@@ -226,16 +316,16 @@ export default function App() {
                     value={d.serial_number}
                     className="bg-slate-950 text-slate-100"
                   >
-                    {d.hostname} ({d.serial_number})
+                    {d.hostname} ({d.model || 'C9300'} • {d.serial_number})
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          {/* Switch SKU Selector */}
+          {/* Switch SKU Selector (Supports both 24-Port and 48-Port C9300 Models) */}
           <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1">
-            <span className="text-[11px] font-mono text-slate-400">SKU:</span>
+            <span className="text-[11px] font-mono text-slate-400">Model:</span>
             <select
               value={switchModelId}
               onChange={(e) => handleModelChange(e.target.value)}
@@ -243,7 +333,7 @@ export default function App() {
             >
               {Object.values(SWITCH_MODELS).map((m) => (
                 <option key={m.id} value={m.id} className="bg-slate-950 text-slate-100">
-                  {m.id} ({m.poeStandard})
+                  {m.id} ({m.portCount}-Port • {m.poeStandard})
                 </option>
               ))}
             </select>
@@ -295,7 +385,7 @@ export default function App() {
                   { id: 'left', label: 'Left (270°)' },
                   { id: 'right', label: 'Right (90°)' },
                   { id: 'top', label: 'Top / PCB' },
-                  { id: 'ports', label: '48 Ports' },
+                  { id: 'ports', label: `${activePortCount} Ports` },
                   { id: 'uplink', label: 'Uplink Bay' }
                 ].map((cam) => (
                   <button
@@ -455,6 +545,7 @@ export default function App() {
                 onCycleLedMode={handleCycleLedMode}
                 beaconActive={beaconActive}
                 onToggleBeacon={() => setBeaconActive(!beaconActive)}
+                switchModelId={switchModelId}
                 networkModuleId={networkModuleId}
                 explodeFactor={explodeFactor}
                 xrayMode={xrayMode}
@@ -497,6 +588,7 @@ export default function App() {
                 totalPoeWatts={totalPoeWatts}
                 poeBudgetWatts={poeBudgetWatts}
                 parsedSwitchData={parsedSwitchData}
+                onPollNeighbor={handleOpenLivePoll}
               />
             </div>
           )}
@@ -525,12 +617,18 @@ export default function App() {
         />
       </main>
 
-      {/* CLI Show Command Upload & SQL Ingestion Studio Modal */}
+      {/* CLI Show Command Upload, Live SSH Poller & Self-Push Studio Modal */}
       <ShowCommandUploader
         isOpen={isUploaderOpen}
         onClose={() => setIsUploaderOpen(false)}
         onDeviceIngested={handleDeviceIngested}
         storageEngine={storageEngine}
+        initialMode={uploaderMode}
+        initialTargetIp={uploaderTargetIp}
+        initialTargetHostname={uploaderTargetHostname}
+        activeDeviceData={parsedSwitchData}
+        storedDevices={savedDevices}
+        serverEndpointHost={serverLanIp}
       />
     </div>
   );

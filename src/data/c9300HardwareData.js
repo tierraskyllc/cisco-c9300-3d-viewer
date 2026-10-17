@@ -2,9 +2,95 @@
 // Source: https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst9300/hardware/install/b_c9300_hig/Product-overview.html
 
 export const SWITCH_MODELS = {
+  'C9300-24UX': {
+    id: 'C9300-24UX',
+    name: 'Catalyst 9300 24-Port mGig UPOE',
+    portCount: 24,
+    downlinkDesc: '24x Multigigabit (100M / 1G / 2.5G / 5G / 10GBASE-T) Cisco UPOE (up to 60W/port)',
+    maxPerPortWatts: 60,
+    poeStandard: 'Cisco UPOE (802.3bt Type 3) + NBASE-T mGig',
+    defaultPsu: 'PWR-C1-1100WAC-P',
+    defaultPoeBudget: 560,
+    dualPsuPoeBudget: 1660,
+    stackingTech: 'StackWise-480 (480 Gbps)',
+    stackPower: true,
+    dimensions: '1.73 × 17.5 × 19.2 in (4.4 × 44.5 × 48.8 cm) — Deep Chassis',
+    weight: '20.06 lb (9.1 kg)',
+    switchingCapacity: '640 Gbps',
+    forwardingRate: '476.19 Mpps'
+  },
+  'C9300-24U': {
+    id: 'C9300-24U',
+    name: 'Catalyst 9300 24-Port UPOE',
+    portCount: 24,
+    downlinkDesc: '24x 10/100/1000 Mbps RJ-45 Cisco UPOE (up to 60W/port)',
+    maxPerPortWatts: 60,
+    poeStandard: 'Cisco UPOE (802.3bt Type 3)',
+    defaultPsu: 'PWR-C1-1100WAC-P',
+    defaultPoeBudget: 830,
+    dualPsuPoeBudget: 1440,
+    stackingTech: 'StackWise-480 (480 Gbps)',
+    stackPower: true,
+    dimensions: '1.73 × 17.5 × 17.5 in (4.4 × 44.5 × 44.5 cm)',
+    weight: '16.33 lb (7.4 kg)',
+    switchingCapacity: '208 Gbps (416 Gbps full-duplex)',
+    forwardingRate: '154.76 Mpps'
+  },
+  'C9300-24P': {
+    id: 'C9300-24P',
+    name: 'Catalyst 9300 24-Port PoE+',
+    portCount: 24,
+    downlinkDesc: '24x 10/100/1000 Mbps RJ-45 PoE+ (IEEE 802.3at up to 30W/port)',
+    maxPerPortWatts: 30,
+    poeStandard: 'PoE+ (802.3at Type 2)',
+    defaultPsu: 'PWR-C1-715WAC-P',
+    defaultPoeBudget: 445,
+    dualPsuPoeBudget: 720,
+    stackingTech: 'StackWise-480 (480 Gbps)',
+    stackPower: true,
+    dimensions: '1.73 × 17.5 × 17.5 in (4.4 × 44.5 × 44.5 cm)',
+    weight: '16.03 lb (7.27 kg)',
+    switchingCapacity: '208 Gbps (416 Gbps full-duplex)',
+    forwardingRate: '154.76 Mpps'
+  },
+  'C9300-24H': {
+    id: 'C9300-24H',
+    name: 'Catalyst 9300 24-Port UPOE+',
+    portCount: 24,
+    downlinkDesc: '24x 10/100/1000 Mbps RJ-45 Cisco UPOE+ (IEEE 802.3bt Type 4 up to 90W/port)',
+    maxPerPortWatts: 90,
+    poeStandard: 'Cisco UPOE+ (802.3bt Type 4)',
+    defaultPsu: 'PWR-C1-1100WAC-P',
+    defaultPoeBudget: 830,
+    dualPsuPoeBudget: 1930,
+    stackingTech: 'StackWise-480 (480 Gbps)',
+    stackPower: true,
+    dimensions: '1.73 × 17.5 × 17.5 in (4.4 × 44.5 × 44.5 cm)',
+    weight: '16.33 lb (7.4 kg)',
+    switchingCapacity: '208 Gbps (416 Gbps full-duplex)',
+    forwardingRate: '154.76 Mpps'
+  },
+  'C9300-24T': {
+    id: 'C9300-24T',
+    name: 'Catalyst 9300 24-Port Data Only',
+    portCount: 24,
+    downlinkDesc: '24x 10/100/1000 Mbps RJ-45 Data Interfaces (Non-PoE)',
+    maxPerPortWatts: 0,
+    poeStandard: 'None (Data Only)',
+    defaultPsu: 'PWR-C1-350WAC-P',
+    defaultPoeBudget: 0,
+    dualPsuPoeBudget: 0,
+    stackingTech: 'StackWise-480 (480 Gbps)',
+    stackPower: true,
+    dimensions: '1.73 × 17.5 × 17.5 in (4.4 × 44.5 × 44.5 cm)',
+    weight: '15.43 lb (7.0 kg)',
+    switchingCapacity: '208 Gbps (416 Gbps full-duplex)',
+    forwardingRate: '154.76 Mpps'
+  },
   'C9300-48P': {
     id: 'C9300-48P',
     name: 'Catalyst 9300 48-Port PoE+',
+    portCount: 48,
     downlinkDesc: '48x 10/100/1000 Mbps RJ-45 PoE+ (IEEE 802.3at up to 30W/port)',
     maxPerPortWatts: 30,
     poeStandard: 'PoE+ (802.3at Type 2)',
@@ -21,6 +107,7 @@ export const SWITCH_MODELS = {
   'C9300-48U': {
     id: 'C9300-48U',
     name: 'Catalyst 9300 48-Port UPOE',
+    portCount: 48,
     downlinkDesc: '48x 10/100/1000 Mbps RJ-45 Cisco UPOE (up to 60W/port)',
     maxPerPortWatts: 60,
     poeStandard: 'Cisco UPOE (802.3bt Type 3)',
@@ -37,6 +124,7 @@ export const SWITCH_MODELS = {
   'C9300-48H': {
     id: 'C9300-48H',
     name: 'Catalyst 9300 48-Port UPOE+',
+    portCount: 48,
     downlinkDesc: '48x 10/100/1000 Mbps RJ-45 Cisco UPOE+ (IEEE 802.3bt Type 4 up to 90W/port)',
     maxPerPortWatts: 90,
     poeStandard: 'Cisco UPOE+ (802.3bt Type 4)',
@@ -54,6 +142,7 @@ export const SWITCH_MODELS = {
   'C9300-48UXM': {
     id: 'C9300-48UXM',
     name: 'Catalyst 9300 48-Port mGig UPOE',
+    portCount: 48,
     downlinkDesc: '48x Multigigabit (100M / 1G / 2.5G / 5G / 12x 10G) UPOE (up to 60W/port)',
     maxPerPortWatts: 60,
     poeStandard: 'Cisco UPOE + NBASE-T mGig',
@@ -70,6 +159,7 @@ export const SWITCH_MODELS = {
   'C9300-48T': {
     id: 'C9300-48T',
     name: 'Catalyst 9300 48-Port Data Only',
+    portCount: 48,
     downlinkDesc: '48x 10/100/1000 Mbps RJ-45 Data Interfaces (Non-PoE)',
     maxPerPortWatts: 0,
     poeStandard: 'None (Data Only)',
@@ -84,6 +174,16 @@ export const SWITCH_MODELS = {
     forwardingRate: '190.48 Mpps'
   }
 };
+
+export function getPortCountForModel(modelId) {
+  if (modelId && SWITCH_MODELS[modelId]?.portCount) {
+    return SWITCH_MODELS[modelId].portCount;
+  }
+  if (typeof modelId === 'string' && modelId.includes('-24')) {
+    return 24;
+  }
+  return 48;
+}
 
 export const NETWORK_MODULES = {
   'C9300-NM-8X': {
