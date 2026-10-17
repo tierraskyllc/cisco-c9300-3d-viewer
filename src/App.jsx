@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import CiscoChassis3D from './components/CiscoChassis3D';
+import MultiDevice3DTopologyScene from './components/MultiDevice3DTopologyScene';
 import TopologyViewer from './components/TopologyViewer';
 import ControlPanel from './components/ControlPanel';
 import ShowCommandUploader from './components/ShowCommandUploader';
@@ -26,7 +27,9 @@ import {
   Sun,
   Maximize2,
   Grid3X3,
-  Wifi
+  Wifi,
+  PanelRightClose,
+  PanelRightOpen
 } from 'lucide-react';
 
 export default function App() {
@@ -45,7 +48,8 @@ export default function App() {
   // Core Switch Configuration State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
   const [networkModuleId, setNetworkModuleId] = useState('C9300-NM-8X');
-  const [viewMode, setViewMode] = useState('split'); // '3d' | 'split' | 'topology'
+  const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | '3d' | 'split' | 'topology'
+  const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false);
   const [cameraPreset, setCameraPreset] = useState('isometric');
 
   // 3D Inspection, Backdrop Brightness, Scale & Disassembly Controls
@@ -339,21 +343,31 @@ export default function App() {
             </select>
           </div>
 
-          {/* Primary Layout Mode Switcher: 3D Only | Split (3D + Topology) | Topology Only */}
+          {/* Primary Layout Mode Switcher: Multi-Device 3D | Single 3D Chassis | Split View | 2D Topology */}
           <div className="flex bg-slate-900 p-1 rounded-lg border border-slate-800">
             {[
-              { id: '3d', label: '3D Chassis', icon: Box },
+              { id: 'multi-3d', label: 'Multi-Device 3D', icon: Sparkles },
+              { id: '3d', label: 'Single 3D Chassis', icon: Box },
               { id: 'split', label: 'Split View', icon: Columns },
-              { id: 'topology', label: 'Topology', icon: Network }
+              { id: 'topology', label: '2D Blueprint & Tables', icon: Network }
             ].map((mode) => {
               const Icon = mode.icon;
               return (
                 <button
                   key={mode.id}
-                  onClick={() => setViewMode(mode.id)}
+                  onClick={() => {
+                    setViewMode(mode.id);
+                    if (mode.id === '3d') {
+                      setIsRightInspectorOpen(true);
+                    } else if (mode.id === 'multi-3d' || mode.id === 'topology') {
+                      setIsRightInspectorOpen(false);
+                    }
+                  }}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
                     viewMode === mode.id
-                      ? 'bg-sky-600 text-white shadow'
+                      ? mode.id === 'multi-3d'
+                        ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow'
+                        : 'bg-sky-600 text-white shadow'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -363,17 +377,60 @@ export default function App() {
               );
             })}
           </div>
+
+          {/* Collapsible Right Hardware Drawer Toggle Button */}
+          <button
+            type="button"
+            onClick={() => setIsRightInspectorOpen(!isRightInspectorOpen)}
+            className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition ${
+              isRightInspectorOpen
+                ? 'bg-sky-500/20 text-sky-200 border-sky-400/50'
+                : 'bg-slate-900 text-slate-300 border-slate-800 hover:text-white'
+            }`}
+            title="Toggle Right Hardware & Port CLI Inspector Drawer"
+          >
+            {isRightInspectorOpen ? (
+              <>
+                <PanelRightClose className="w-3.5 h-3.5" /> Hide HW Drawer
+              </>
+            ) : (
+              <>
+                <PanelRightOpen className="w-3.5 h-3.5" /> HW Drawer
+              </>
+            )}
+          </button>
         </div>
       </header>
 
       {/* =========================================================
-          MAIN WORKSPACE: LEFT/CENTER VIEWPORTS + RIGHT INSPECTOR
+          MAIN WORKSPACE: LEFT/CENTER VIEWPORTS + COLLAPSIBLE RIGHT INSPECTOR
          ========================================================= */}
-      <main className="flex-1 flex flex-col lg:flex-row gap-3 p-3 min-h-0 overflow-hidden">
+      <main className="flex-1 flex flex-col lg:flex-row gap-2.5 p-2.5 min-h-0 overflow-hidden">
         {/* Left/Center Interactive Canvas Column */}
-        <div className="flex-1 flex flex-col gap-3 min-w-0 min-h-0">
-          {/* 3D Viewport Controls Bar (Shown whenever 3D view is visible) */}
-          {viewMode !== 'topology' && (
+        <div className="flex-1 flex flex-col gap-2.5 min-w-0 min-h-0">
+          {/* =====================================================
+              MODE 1: MULTI-DEVICE 3D NETWORK TOPOLOGY CAMERA SCENE
+             ===================================================== */}
+          {viewMode === 'multi-3d' && (
+            <div className="flex-1 min-h-0">
+              <MultiDevice3DTopologyScene
+                parsedSwitchData={parsedSwitchData}
+                savedDevices={savedDevices}
+                onSelectSavedDevice={handleSelectSavedDevice}
+                onPollNeighbor={handleOpenLivePoll}
+                onSwitchToSingleChassis3D={() => {
+                  setViewMode('3d');
+                  setIsRightInspectorOpen(true);
+                }}
+                backdropBrightness={backdropBrightness}
+              />
+            </div>
+          )}
+
+          {/* =====================================================
+              SINGLE-CHASSIS 3D VIEWPORT CONTROLS BAR (Shown in '3d' & 'split' modes)
+             ===================================================== */}
+          {(viewMode === '3d' || viewMode === 'split') && (
             <div className="flex flex-wrap items-center justify-between gap-2 px-3.5 py-2 bg-slate-900/75 border border-slate-800/90 rounded-xl shrink-0">
               {/* Camera Angle Quick-Jump Buttons */}
               <div className="flex flex-wrap items-center gap-1">
@@ -534,13 +591,16 @@ export default function App() {
             </div>
           )}
 
-          {/* 3D Switch Viewport */}
-          {viewMode !== 'topology' && (
-            <div className={viewMode === 'split' ? 'h-[52%] min-h-[280px]' : 'flex-1 min-h-0'}>
+          {/* Single 3D Switch Viewport */}
+          {(viewMode === '3d' || viewMode === 'split') && (
+            <div className={viewMode === 'split' ? 'h-[48%] min-h-[260px]' : 'flex-1 min-h-0'}>
               <CiscoChassis3D
                 portsData={currentPorts}
                 selectedItem={selectedItem}
-                onSelect={setSelectedItem}
+                onSelect={(item) => {
+                  setSelectedItem(item);
+                  setIsRightInspectorOpen(true);
+                }}
                 ledMode={ledMode}
                 onCycleLedMode={handleCycleLedMode}
                 beaconActive={beaconActive}
@@ -563,14 +623,15 @@ export default function App() {
             </div>
           )}
 
-          {/* Linked Network Topology Viewer */}
-          {viewMode !== '3d' && (
-            <div className={viewMode === 'split' ? 'flex-1 min-h-0' : 'flex-1 min-h-0'}>
+          {/* Linked Network Topology Viewer (Shown in 'split' and 'topology' modes) */}
+          {(viewMode === 'topology' || viewMode === 'split') && (
+            <div className="flex-1 min-h-0">
               <TopologyViewer
                 portsData={currentPorts}
                 selectedItem={selectedItem}
                 onSelect={(item) => {
                   setSelectedItem(item);
+                  setIsRightInspectorOpen(true);
                   if (item.type === 'port') {
                     setCameraPreset('ports');
                   } else if (item.id === 'uplink-module') {
@@ -596,27 +657,30 @@ export default function App() {
           )}
         </div>
 
-        {/* Right Hardware & Telemetry Inspector Sidebar */}
-        <ControlPanel
-          selectedItem={selectedItem}
-          onSelectWithCamera={handleSelectWithCamera}
-          portsData={currentPorts}
-          onUpdatePortStatus={handleUpdatePortStatus}
-          ledMode={ledMode}
-          onSetLedMode={setLedMode}
-          beaconActive={beaconActive}
-          onToggleBeacon={() => setBeaconActive(!beaconActive)}
-          networkModuleId={networkModuleId}
-          onSetNetworkModuleId={setNetworkModuleId}
-          psuStates={psuStates}
-          onSetPsuStates={setPsuStates}
-          fanFaults={fanFaults}
-          onSetFanFaults={setFanFaults}
-          totalPoeWatts={totalPoeWatts}
-          poeBudgetWatts={poeBudgetWatts}
-          switchModel={switchModel}
-          parsedSwitchData={parsedSwitchData}
-        />
+        {/* Collapsible Right Hardware & Telemetry Inspector Sidebar */}
+        {isRightInspectorOpen && (
+          <ControlPanel
+            selectedItem={selectedItem}
+            onSelectWithCamera={handleSelectWithCamera}
+            portsData={currentPorts}
+            onUpdatePortStatus={handleUpdatePortStatus}
+            ledMode={ledMode}
+            onSetLedMode={setLedMode}
+            beaconActive={beaconActive}
+            onToggleBeacon={() => setBeaconActive(!beaconActive)}
+            networkModuleId={networkModuleId}
+            onSetNetworkModuleId={setNetworkModuleId}
+            psuStates={psuStates}
+            onSetPsuStates={setPsuStates}
+            fanFaults={fanFaults}
+            onSetFanFaults={setFanFaults}
+            totalPoeWatts={totalPoeWatts}
+            poeBudgetWatts={poeBudgetWatts}
+            switchModel={switchModel}
+            parsedSwitchData={parsedSwitchData}
+            onCollapse={() => setIsRightInspectorOpen(false)}
+          />
+        )}
       </main>
 
       {/* CLI Show Command Upload, Live SSH Poller & Self-Push Studio Modal */}

@@ -9,7 +9,9 @@ import {
   CheckCircle2,
   Sparkles,
   Layers,
-  Globe
+  Globe,
+  ChevronUp,
+  ChevronDown
 } from 'lucide-react';
 
 /**
@@ -31,6 +33,7 @@ export default function IsometricBlueprintView({
   const [zoom, setZoom] = useState(1);
   const [selectedNodeKey, setSelectedNodeKey] = useState(null);
   const [blueprintScope, setBlueprintScope] = useState('campus-detail'); // 'campus-detail' | 'multi-country'
+  const [isBottomDrawerOpen, setIsBottomDrawerOpen] = useState(false);
 
   const switchNodes = globalGraph?.switchNodes || [];
   const switchLinks = globalGraph?.switchLinks || [];
@@ -575,9 +578,9 @@ export default function IsometricBlueprintView({
   };
 
   return (
-    <div className="w-full flex flex-col bg-[#060c1a] rounded-2xl border border-slate-700/90 overflow-hidden shadow-2xl">
+    <div className="w-full flex-1 min-h-0 flex flex-col bg-[#060c1a] overflow-hidden">
       {/* Blueprint Control Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 bg-slate-950 border-b border-slate-800 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-2 bg-slate-950 border-b border-slate-800 text-xs shrink-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="px-2.5 py-1 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/40 font-mono font-bold flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
@@ -653,19 +656,21 @@ export default function IsometricBlueprintView({
         </div>
       </div>
 
-      {/* Main Blueprint SVG Canvas */}
-      <div className="w-full overflow-auto bg-[#d4e4f7] p-2">
+      {/* Main Blueprint SVG Canvas — Auto-Fits 100% into the Camera Viewport */}
+      <div className="flex-1 min-h-0 w-full overflow-auto bg-[#d4e4f7] p-1.5 flex items-center justify-center">
         <div
+          className="w-full h-full flex items-center justify-center"
           style={{
             transform: `scale(${zoom})`,
-            transformOrigin: 'top center',
+            transformOrigin: 'center center',
             transition: 'transform 150ms ease-out'
           }}
         >
           <svg
             ref={svgRef}
             viewBox="0 0 1440 820"
-            className="w-full h-auto rounded-lg shadow-inner select-none"
+            preserveAspectRatio="xMidYMid meet"
+            className="w-full h-full max-h-full rounded-lg shadow-inner select-none"
             xmlns="http://www.w3.org/2000/svg"
           >
             <defs>
@@ -932,14 +937,14 @@ export default function IsometricBlueprintView({
                    ========================================================= */}
                 {/* 1. Orange Zone Pad: Campus Core Backbone (tcore-9600) */}
                 {renderIsometricZonePad({
-                  cx: 310,
+                  cx: 280,
                   cy: 225,
-                  w: 380,
-                  h: 165,
+                  w: 360,
+                  h: 155,
                   fill: '#f97316',
                   stroke: '#fb923c',
                   glowId: 'glowOrange',
-                  label: 'TIER 1 CORE BACKBONE ZONE',
+                  label: 'TIER 1 CORE BACKBONE',
                   sublabel: '25G SFP28 OPTICAL DISTRIBUTION',
                   labelColor: '#fed7aa'
                 })}
@@ -947,8 +952,8 @@ export default function IsometricBlueprintView({
                 {/* 2. Green/Cyan Zone Pad: Polled Catalyst 9300 Switch Fabric (MDF + IDF) */}
                 {renderIsometricZonePad({
                   cx: 425,
-                  cy: 505,
-                  w: 650,
+                  cy: 515,
+                  w: 660,
                   h: 295,
                   fill: '#10b981',
                   stroke: '#34d399',
@@ -993,18 +998,18 @@ export default function IsometricBlueprintView({
                     GLOWING NEON DATA CONDUITS & DIRECTIONAL FLOW ARROWS
                    ========================================================= */}
 
-                {/* CONDUIT A: Dual 25G Fiber Optic Uplinks between tcore-9600 (310,210) and T-BAN-2FL-WL (535,445) */}
+                {/* CONDUIT A: Dual 25G Fiber Optic Uplinks between tcore-9600 (280,210) and T-BAN-2FL-WL (565,445) */}
                 <g filter="url(#glowOrange)">
                   {/* Fiber Link #1: Tw2/2/0/35 <-> Tw1/1/1 */}
                   <path
-                    d="M 325 235 L 430 330 L 520 420"
+                    d="M 305 235 L 430 330 L 540 420"
                     fill="none"
                     stroke="#f97316"
                     strokeWidth="7"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 325 235 L 430 330 L 520 420"
+                    d="M 305 235 L 430 330 L 540 420"
                     fill="none"
                     stroke="#ffedd5"
                     strokeWidth="2.2"
@@ -1012,14 +1017,14 @@ export default function IsometricBlueprintView({
                   />
                   {/* Fiber Link #2: Tw1/2/0/35 <-> Tw1/1/2 */}
                   <path
-                    d="M 295 250 L 400 345 L 495 435"
+                    d="M 275 250 L 400 345 L 515 435"
                     fill="none"
                     stroke="#38bdf8"
                     strokeWidth="7"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 295 250 L 400 345 L 495 435"
+                    d="M 275 250 L 400 345 L 515 435"
                     fill="none"
                     stroke="#e0f2fe"
                     strokeWidth="2.2"
@@ -1027,8 +1032,8 @@ export default function IsometricBlueprintView({
                   />
                 </g>
 
-                {/* Inline Engineering Callout Badge for Dual 25G Fiber Uplinks */}
-                <g transform="translate(415, 330)">
+                {/* Inline Engineering Callout Badge for Dual 25G Fiber Uplinks (Positioned cleanly to the upper-right of the fiber links) */}
+                <g transform="translate(555, 295)">
                   <rect
                     x="-135"
                     y="-22"
@@ -1036,7 +1041,7 @@ export default function IsometricBlueprintView({
                     height="42"
                     rx="6"
                     fill="#061024"
-                    fillOpacity="0.94"
+                    fillOpacity="0.95"
                     stroke="#fb923c"
                     strokeWidth="1.5"
                   />
@@ -1073,17 +1078,17 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT B: Bi-Directionally Verified 10G mGig Trunk between T-BAN-2FL-WL (545,455) and T-BAN-2FL-WorkStudy-C9300 (260,555) */}
+                {/* CONDUIT B: Bi-Directionally Verified 10G mGig Trunk between T-BAN-2FL-WL (565,455) and T-BAN-2FL-WorkStudy-C9300 (210,560) */}
                 <g filter="url(#glowCyan)">
                   <path
-                    d="M 525 460 L 395 510 L 270 555"
+                    d="M 545 460 L 385 520 L 220 560"
                     fill="none"
                     stroke="#10b981"
                     strokeWidth="9"
                     strokeLinecap="round"
                   />
                   <path
-                    d="M 525 460 L 395 510 L 270 555"
+                    d="M 545 460 L 385 520 L 220 560"
                     fill="none"
                     stroke="#d1fae5"
                     strokeWidth="2.8"
@@ -1091,8 +1096,8 @@ export default function IsometricBlueprintView({
                   />
                 </g>
 
-                {/* Inline Callout Badge for Bi-Directionally Verified Switch-to-Switch Trunk */}
-                <g transform="translate(395, 515)">
+                {/* Inline Callout Badge for Bi-Directionally Verified Switch-to-Switch Trunk (Positioned below the conduit with zero overlap) */}
+                <g transform="translate(475, 595)">
                   <rect
                     x="-138"
                     y="-22"
@@ -1137,10 +1142,10 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT C: Glowing Cyan PoE Conduit from T-BAN-2FL-WL (560,445) across to Wi-Fi 6 AP Zone (950,290) */}
+                {/* CONDUIT C: Glowing Cyan PoE Conduit from T-BAN-2FL-WL (595,445) across to Wi-Fi 6 AP Zone (950,290) */}
                 <g filter="url(#glowCyan)">
                   <path
-                    d="M 585 445 L 775 445 L 775 280 L 925 280"
+                    d="M 605 445 L 775 445 L 775 280 L 925 280"
                     fill="none"
                     stroke="#06b6d4"
                     strokeWidth="7"
@@ -1148,7 +1153,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                   <path
-                    d="M 585 445 L 775 445 L 775 280 L 925 280"
+                    d="M 605 445 L 775 445 L 775 280 L 925 280"
                     fill="none"
                     stroke="#cffafe"
                     strokeWidth="2.2"
@@ -1190,10 +1195,10 @@ export default function IsometricBlueprintView({
                   </text>
                 </g>
 
-                {/* CONDUIT D: Glowing Purple Core-to-Colocation Conduit from tcore-9600 (350,210) to Halsey165 / Hastings Zone (940,585) */}
+                {/* CONDUIT D: Glowing Purple Core-to-Colocation Conduit from tcore-9600 (335,210) to Halsey165 / Hastings Zone (940,585) */}
                 <g filter="url(#glowPurple)">
                   <path
-                    d="M 365 205 L 735 205 L 735 585 L 930 585"
+                    d="M 335 205 L 735 205 L 735 585 L 930 585"
                     fill="none"
                     stroke="#a855f7"
                     strokeWidth="7.5"
@@ -1201,7 +1206,7 @@ export default function IsometricBlueprintView({
                     strokeLinejoin="round"
                   />
                   <path
-                    d="M 365 205 L 735 205 L 735 585 L 930 585"
+                    d="M 335 205 L 735 205 L 735 585 L 930 585"
                     fill="none"
                     stroke="#f3e8ff"
                     strokeWidth="2.2"
@@ -1249,7 +1254,7 @@ export default function IsometricBlueprintView({
 
                 {/* 1. Tier 1 Core Tower: tcore-9600.net.fdu.edu */}
                 {renderIsometric3DCoreTower({
-                  x: 310,
+                  x: 280,
                   y: 215,
                   hostname: coreNode.hostname,
                   model: coreNode.model || 'C9606R',
@@ -1268,7 +1273,7 @@ export default function IsometricBlueprintView({
 
                 {/* 2. Tier 2 Polled Distribution Switch: T-BAN-2FL-WL */}
                 {renderIsometric3DSwitch({
-                  x: 545,
+                  x: 565,
                   y: 450,
                   scale: 1.05,
                   title: mdfNode.hostname,
@@ -1291,8 +1296,8 @@ export default function IsometricBlueprintView({
 
                 {/* 3. Tier 3 Polled IDF Switch: T-BAN-2FL-WorkStudy-C9300 */}
                 {renderIsometric3DSwitch({
-                  x: 255,
-                  y: 560,
+                  x: 205,
+                  y: 555,
                   scale: 1.05,
                   title: idfNode.hostname,
                   subtitle: idfNode.iosVersion || '17.15.04',
@@ -1819,112 +1824,126 @@ export default function IsometricBlueprintView({
       </div>
 
       {/* =========================================================
-          BOTTOM COMPLETE CAPTURED DEVICE TELEMETRY AUDIT CARDS
-          (Verifies every piece of information captured from your 2 switches!)
+          COLLAPSIBLE BOTTOM CAPTURED DEVICE TELEMETRY DRAWER
+          (Collapsed by default to maximize camera viewport height!)
          ========================================================= */}
-      <div className="p-3.5 bg-slate-950 border-t border-slate-800 space-y-2.5">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+      <div className="bg-slate-950 border-t border-slate-800 shrink-0">
+        <button
+          type="button"
+          onClick={() => setIsBottomDrawerOpen(!isBottomDrawerOpen)}
+          className="w-full px-4 py-2 flex flex-wrap items-center justify-between gap-2 hover:bg-slate-900/90 transition cursor-pointer"
+        >
           <span className="text-xs font-mono font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-            Captured Device Information Verification ({switchNodes.filter((n) => n.isPolled).length} Polled Switches + {switchNodes.filter((n) => !n.isPolled).length} Discovered Core + {attachedAps.length} Wi-Fi 6 APs)
+            Captured Device Telemetry Drawer ({switchNodes.filter((n) => n.isPolled).length} Polled Switches • {switchNodes.filter((n) => !n.isPolled).length} Core • {attachedAps.length} Wi-Fi 6 APs)
           </span>
-          <span className="text-[11px] font-mono text-slate-400">
-            Click any switch card below or in the 3D Blueprint above to load its 3D Hardware Chassis
+          <span className="text-[11px] font-mono text-emerald-300 flex items-center gap-1 bg-slate-900 px-2.5 py-0.5 rounded border border-slate-700">
+            {isBottomDrawerOpen ? (
+              <>
+                <ChevronDown className="w-3.5 h-3.5" /> Collapse Drawer ▼
+              </>
+            ) : (
+              <>
+                <ChevronUp className="w-3.5 h-3.5" /> Expand Captured Device Cards ▲
+              </>
+            )}
           </span>
-        </div>
+        </button>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 text-xs font-mono">
-          {/* Card 1: Polled Switch #1 (T-BAN-2FL-WorkStudy-C9300) */}
-          <div
-            onClick={() =>
-              onSelectSavedDevice &&
-              idfNode.serialNumber &&
-              onSelectSavedDevice(idfNode.serialNumber)
-            }
-            className={`p-3 rounded-xl border transition cursor-pointer ${
-              activeDeviceSerial === idfNode.serialNumber
-                ? 'bg-sky-950/40 border-sky-400'
-                : 'bg-slate-900/80 border-slate-800 hover:border-sky-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                POLLED SWITCH #1 • IDF
-              </span>
-              <span className="text-[10px] text-sky-300 flex items-center gap-1">
-                <Box className="w-3 h-3" /> {activeDeviceSerial === idfNode.serialNumber ? 'Active in 3D' : 'Load 3D'}
-              </span>
-            </div>
-            <div className="text-sm font-bold text-white">{idfNode.hostname}</div>
-            <div className="text-slate-300 mt-1 space-y-0.5 text-[11px]">
-              <div>• Model: <strong className="text-sky-300">{idfNode.model}</strong> (24-Port mGig)</div>
-              <div>• Serial #: <strong className="text-emerald-300">{idfNode.serialNumber}</strong> • IOS-XE: <strong>{idfNode.iosVersion}</strong></div>
-              <div>• Mgmt IP: <strong className="text-emerald-300">{idfNode.mgmtIp}</strong> • Site: <strong>{idfNode.siteCode}</strong></div>
-              <div>
-                • Trunk Link: <strong className="text-amber-300">Te1/0/24 ↔ {mdfNode.hostname} [Te1/0/20]</strong> (VLAN {mdfToIdfLink?.nativeVlan || 133})
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Polled Switch #2 (T-BAN-2FL-WL) */}
-          <div
-            onClick={() =>
-              onSelectSavedDevice &&
-              mdfNode.serialNumber &&
-              onSelectSavedDevice(mdfNode.serialNumber)
-            }
-            className={`p-3 rounded-xl border transition cursor-pointer ${
-              activeDeviceSerial === mdfNode.serialNumber
-                ? 'bg-sky-950/40 border-sky-400'
-                : 'bg-slate-900/80 border-slate-800 hover:border-sky-500/50'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                POLLED SWITCH #2 • MDF
-              </span>
-              <span className="text-[10px] text-sky-300 flex items-center gap-1">
-                <Box className="w-3 h-3" /> {activeDeviceSerial === mdfNode.serialNumber ? 'Active in 3D' : 'Load 3D'}
-              </span>
-            </div>
-            <div className="text-sm font-bold text-white">{mdfNode.hostname}</div>
-            <div className="text-slate-300 mt-1 space-y-0.5 text-[11px]">
-              <div>• Model: <strong className="text-sky-300">{mdfNode.model}</strong> (24-Port mGig)</div>
-              <div>• Serial #: <strong className="text-emerald-300">{mdfNode.serialNumber}</strong> • IOS-XE: <strong>{mdfNode.iosVersion}</strong></div>
-              <div>• Mgmt IP: <strong className="text-emerald-300">{mdfNode.mgmtIp}</strong> • PoE Draw: <strong className="text-amber-300">{(mdfNode.totalPoeWatts || 194.0).toFixed(1)}W (7 APs)</strong></div>
-              <div>
-                • Uplinks: <strong className="text-cyan-300">Tw1/1/1 &amp; Tw1/1/2 → {coreNode.hostname}</strong> • Downlink: <strong className="text-emerald-300">Te1/0/20</strong>
-              </div>
-            </div>
-          </div>
-
-          {/* Card 3: Discovered Upstream Core Switch (tcore-9600.net.fdu.edu) */}
-          <div className="p-3 rounded-xl border border-orange-500/40 bg-slate-900/80 flex flex-col justify-between">
-            <div>
+        {isBottomDrawerOpen && (
+          <div className="px-3.5 pb-3.5 pt-1 grid grid-cols-1 lg:grid-cols-3 gap-3 text-xs font-mono max-h-56 overflow-y-auto">
+            {/* Card 1: Polled Switch #1 (T-BAN-2FL-WorkStudy-C9300) */}
+            <div
+              onClick={() =>
+                onSelectSavedDevice &&
+                idfNode.serialNumber &&
+                onSelectSavedDevice(idfNode.serialNumber)
+              }
+              className={`p-3 rounded-xl border transition cursor-pointer ${
+                activeDeviceSerial === idfNode.serialNumber
+                  ? 'bg-sky-950/40 border-sky-400'
+                  : 'bg-slate-900/80 border-slate-800 hover:border-sky-500/50'
+              }`}
+            >
               <div className="flex items-center justify-between mb-1">
-                <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 text-[10px] font-bold">
-                  DISCOVERED TIER 1 CORE • CDP
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                  POLLED SWITCH #1 • IDF
                 </span>
-                {onPollNeighbor && (
-                  <button
-                    type="button"
-                    onClick={() => onPollNeighbor(coreNode.mgmtIp, coreNode.hostname)}
-                    className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
-                  >
-                    <Terminal className="w-2.5 h-2.5" /> Poll Core via SSH
-                  </button>
-                )}
+                <span className="text-[10px] text-sky-300 flex items-center gap-1">
+                  <Box className="w-3 h-3" /> {activeDeviceSerial === idfNode.serialNumber ? 'Active in 3D' : 'Load 3D'}
+                </span>
               </div>
-              <div className="text-sm font-bold text-white">{coreNode.hostname}</div>
+              <div className="text-sm font-bold text-white">{idfNode.hostname}</div>
               <div className="text-slate-300 mt-1 space-y-0.5 text-[11px]">
-                <div>• Platform: <strong className="text-orange-300">Cisco {coreNode.model}</strong> (Modular Core Chassis)</div>
-                <div>• Mgmt IP: <strong className="text-emerald-300">{coreNode.mgmtIp}</strong> • IOS-XE: <strong>17.12.4</strong></div>
-                <div>• Fiber Port #1: <strong className="text-cyan-300">Tw2/2/0/35 ↔ {mdfNode.hostname} [Tw1/1/1]</strong></div>
-                <div>• Fiber Port #2: <strong className="text-cyan-300">Tw1/2/0/35 ↔ {mdfNode.hostname} [Tw1/1/2]</strong></div>
+                <div>• Model: <strong className="text-sky-300">{idfNode.model}</strong> (24-Port mGig)</div>
+                <div>• Serial #: <strong className="text-emerald-300">{idfNode.serialNumber}</strong> • IOS-XE: <strong>{idfNode.iosVersion}</strong></div>
+                <div>• Mgmt IP: <strong className="text-emerald-300">{idfNode.mgmtIp}</strong> • Site: <strong>{idfNode.siteCode}</strong></div>
+                <div>
+                  • Trunk Link: <strong className="text-amber-300">Te1/0/24 ↔ {mdfNode.hostname} [Te1/0/20]</strong> (VLAN {mdfToIdfLink?.nativeVlan || 133})
+                </div>
+              </div>
+            </div>
+
+            {/* Card 2: Polled Switch #2 (T-BAN-2FL-WL) */}
+            <div
+              onClick={() =>
+                onSelectSavedDevice &&
+                mdfNode.serialNumber &&
+                onSelectSavedDevice(mdfNode.serialNumber)
+              }
+              className={`p-3 rounded-xl border transition cursor-pointer ${
+                activeDeviceSerial === mdfNode.serialNumber
+                  ? 'bg-sky-950/40 border-sky-400'
+                  : 'bg-slate-900/80 border-slate-800 hover:border-sky-500/50'
+              }`}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                  POLLED SWITCH #2 • MDF
+                </span>
+                <span className="text-[10px] text-sky-300 flex items-center gap-1">
+                  <Box className="w-3 h-3" /> {activeDeviceSerial === mdfNode.serialNumber ? 'Active in 3D' : 'Load 3D'}
+                </span>
+              </div>
+              <div className="text-sm font-bold text-white">{mdfNode.hostname}</div>
+              <div className="text-slate-300 mt-1 space-y-0.5 text-[11px]">
+                <div>• Model: <strong className="text-sky-300">{mdfNode.model}</strong> (24-Port mGig)</div>
+                <div>• Serial #: <strong className="text-emerald-300">{mdfNode.serialNumber}</strong> • IOS-XE: <strong>{mdfNode.iosVersion}</strong></div>
+                <div>• Mgmt IP: <strong className="text-emerald-300">{mdfNode.mgmtIp}</strong> • PoE Draw: <strong className="text-amber-300">{(mdfNode.totalPoeWatts || 194.0).toFixed(1)}W (7 APs)</strong></div>
+                <div>
+                  • Uplinks: <strong className="text-cyan-300">Tw1/1/1 &amp; Tw1/1/2 → {coreNode.hostname}</strong> • Downlink: <strong className="text-emerald-300">Te1/0/20</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Discovered Upstream Core Switch (tcore-9600.net.fdu.edu) */}
+            <div className="p-3 rounded-xl border border-orange-500/40 bg-slate-900/80 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="px-2 py-0.5 rounded bg-orange-500/20 text-orange-300 text-[10px] font-bold">
+                    DISCOVERED TIER 1 CORE • CDP
+                  </span>
+                  {onPollNeighbor && (
+                    <button
+                      type="button"
+                      onClick={() => onPollNeighbor(coreNode.mgmtIp, coreNode.hostname)}
+                      className="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-[10px] flex items-center gap-1 cursor-pointer"
+                    >
+                      <Terminal className="w-2.5 h-2.5" /> Poll Core via SSH
+                    </button>
+                  )}
+                </div>
+                <div className="text-sm font-bold text-white">{coreNode.hostname}</div>
+                <div className="text-slate-300 mt-1 space-y-0.5 text-[11px]">
+                  <div>• Platform: <strong className="text-orange-300">Cisco {coreNode.model}</strong> (Modular Core Chassis)</div>
+                  <div>• Mgmt IP: <strong className="text-emerald-300">{coreNode.mgmtIp}</strong> • IOS-XE: <strong>17.12.4</strong></div>
+                  <div>• Fiber Port #1: <strong className="text-cyan-300">Tw2/2/0/35 ↔ {mdfNode.hostname} [Tw1/1/1]</strong></div>
+                  <div>• Fiber Port #2: <strong className="text-cyan-300">Tw1/2/0/35 ↔ {mdfNode.hostname} [Tw1/1/2]</strong></div>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

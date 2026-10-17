@@ -35,7 +35,8 @@ export default function ControlPanel({
   totalPoeWatts,
   poeBudgetWatts,
   switchModel,
-  parsedSwitchData
+  parsedSwitchData,
+  onCollapse
 }) {
   const [showPinout, setShowPinout] = useState(false);
   const [zoneTab, setZoneTab] = useState('ALL'); // 'ALL' | 'FRONT' | 'REAR' | 'INTERNAL'
@@ -80,17 +81,29 @@ export default function ControlPanel({
   const devMeta = parsedSwitchData?.device;
 
   return (
-    <aside className="isolated-panel w-full lg:w-[440px] xl:w-[470px] h-full bg-slate-900/65 border border-slate-800/90 rounded-xl flex flex-col overflow-hidden backdrop-blur-md shadow-2xl">
+    <aside className="isolated-panel w-full lg:w-[410px] xl:w-[435px] h-full bg-slate-900/65 border border-slate-800/90 rounded-xl flex flex-col overflow-hidden backdrop-blur-md shadow-2xl shrink-0">
       {/* 1. Device Identity (show version) + PoE Power Budget Header */}
       <div className="p-3.5 bg-slate-950/85 border-b border-slate-800 space-y-2">
         {devMeta && (
-          <div className="flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] font-mono">
+          <div className="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-[11px] font-mono">
             <div className="truncate">
               <span className="text-sky-400 font-bold">{devMeta.hostname}</span>{' '}
               <span className="text-slate-400">• S/N:</span>{' '}
               <span className="text-emerald-300">{devMeta.serialNumber}</span>
             </div>
-            <span className="text-slate-300 shrink-0">IOS-XE {devMeta.iosVersion}</span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-slate-300">IOS-XE {devMeta.iosVersion}</span>
+              {onCollapse && (
+                <button
+                  type="button"
+                  onClick={onCollapse}
+                  className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] cursor-pointer"
+                  title="Collapse right hardware inspector drawer"
+                >
+                  ▶
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -366,11 +379,13 @@ export default function ControlPanel({
                   {activeComponent.higCallout} • {activeComponent.zone}
                 </span>
                 <span className="text-[11px] font-mono text-slate-400">
-                  PID: {activeComponent.partNumber}
+                  PID: {activeComponent.id === 'chassis-main' ? switchModel.id : activeComponent.partNumber}
                 </span>
               </div>
               <h2 className="text-lg font-bold text-white mt-1.5 leading-snug">
-                {activeComponent.title}
+                {activeComponent.id === 'chassis-main'
+                  ? `1RU Galvanized Steel Chassis (${switchModel.id} — ${switchModel.portCount}-Port)`
+                  : activeComponent.title}
               </h2>
               <p className="text-xs text-sky-300/90 font-medium mt-0.5">
                 {activeComponent.subtitle}
@@ -378,7 +393,9 @@ export default function ControlPanel({
             </div>
 
             <p className="text-xs text-slate-300 leading-relaxed bg-slate-950/60 p-3 rounded-lg border border-slate-800">
-              {activeComponent.summary}
+              {activeComponent.id === 'chassis-main'
+                ? `Heavy-duty 1RU enterprise rackmount enclosure with front-to-back and side-to-rear cooling channels, housing the UADP 2.0 ASIC, x86 CPU complex, ${switchModel.portCount} downlink RJ-45 ports (${switchModel.downlinkDesc}), modular network uplink bay, dual hot-swap PSU bays, and 3 hot-swap fan bays.`
+                : activeComponent.summary}
             </p>
 
             {/* Parsed show ip interface brief & show vlan Summary (When Chassis / Uplinks Selected) */}
