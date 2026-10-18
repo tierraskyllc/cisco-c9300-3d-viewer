@@ -188,19 +188,51 @@ function mergeWithDefault3DLayout(saved) {
   const merged = structuredClone(DEFAULT_3D_LAYOUT);
   if (saved.pads && typeof saved.pads === 'object') {
     for (const [k, v] of Object.entries(saved.pads)) {
-      if (merged.pads[k] && typeof v?.cx === 'number' && typeof v?.cz === 'number') {
-        merged.pads[k] = { ...merged.pads[k], cx: v.cx, cz: v.cz };
+      if (typeof v?.cx === 'number' && typeof v?.cz === 'number') {
+        merged.pads[k] = { ...(merged.pads[k] || {}), cx: v.cx, cz: v.cz };
       }
     }
   }
   if (saved.devices && typeof saved.devices === 'object') {
     for (const [k, v] of Object.entries(saved.devices)) {
-      if (merged.devices[k] && typeof v?.dx === 'number' && typeof v?.dz === 'number') {
-        merged.devices[k] = { ...merged.devices[k], dx: v.dx, dz: v.dz };
+      if (typeof v?.dx === 'number' && typeof v?.dz === 'number') {
+        merged.devices[k] = { ...(merged.devices[k] || {}), dx: v.dx, dz: v.dz };
       }
     }
   }
   return merged;
+}
+
+// Distinct Architectural Rim & Slab Colors for FDU Campus Building 3D Bases
+const BUILDING_BASE_THEME = {
+  CORE: { baseColor: '#17162e', rimColor: '#fb923c' },
+  BAN: { baseColor: '#091d34', rimColor: '#10b981' },
+  DIC: { baseColor: '#081b33', rimColor: '#38bdf8' },
+  ROB: { baseColor: '#0c1938', rimColor: '#60a5fa' },
+  BEC: { baseColor: '#072227', rimColor: '#2dd4bf' },
+  UCH: { baseColor: '#161332', rimColor: '#a78bfa' },
+  LCH: { baseColor: '#07241e', rimColor: '#34d399' },
+  ROT: { baseColor: '#261028', rimColor: '#f472b6' },
+  GIO: { baseColor: '#241b0b', rimColor: '#fbbf24' },
+  SUB: { baseColor: '#28111c', rimColor: '#fb7185' },
+  KRN: { baseColor: '#131636', rimColor: '#818cf8' },
+  NPT: { baseColor: '#08222c', rimColor: '#22d3ee' },
+  WIL: { baseColor: '#1b1630', rimColor: '#c084fc' },
+  MUS: { baseColor: '#0b211d', rimColor: '#4ade80' },
+  UNI: { baseColor: '#231815', rimColor: '#fb923c' },
+  ALU: { baseColor: '#0e2038', rimColor: '#7dd3fc' },
+  WRG: { baseColor: '#1c1917', rimColor: '#facc15' },
+  PSO: { baseColor: '#251218', rimColor: '#f87171' },
+  TPL: { baseColor: '#0f1e2e', rimColor: '#38bdf8' }
+};
+
+function getBuildingBaseTheme(code) {
+  return (
+    BUILDING_BASE_THEME[code] || {
+      baseColor: '#0b192e',
+      rimColor: '#38bdf8'
+    }
+  );
 }
 
 function clamp(val, min, max) {
@@ -220,11 +252,11 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
   const presets = useMemo(
     () => ({
       'blueprint-iso': { pos: [-16, 21, 25], target: [0, 0.5, 0] },
-      'campus-wide': { pos: [-24, 38, 46], target: [-16, 0.5, 0] },
+      'campus-wide': { pos: [-26, 48, 60], target: [-18, 0.5, -2] },
       'metro-fabric': { pos: [-9, 13, 18], target: [-6.5, 1.0, 0.5] },
       'switch-trunks': { pos: [-6, 8.5, 13.5], target: [-6.5, 0.6, 3.2] },
       'wifi-fleet': { pos: [9, 12, 16], target: [6.5, 0.8, -1.5] },
-      'top-blueprint': { pos: [-10, 52, 0.01], target: [-10, 0, 0] },
+      'top-blueprint': { pos: [-14, 65, 0.01], target: [-14, 0, 0] },
       'front-elevation': { pos: [0, 7, 29], target: [0, 1, 0] }
     }),
     []
@@ -238,7 +270,8 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
     lastKey.current = currentKey;
     if (focusTarget && focusTarget.pos) {
       const [fx, fy, fz] = focusTarget.pos;
-      targetPos.current.set(fx - 4.5, fy + 6.5, fz + 9.5);
+      const dist = focusTarget.distance || 9.5;
+      targetPos.current.set(fx - dist * 0.45, fy + dist * 0.68, fz + dist);
       targetLookAt.current.set(fx, fy + 0.5, fz);
       isTransitioning.current = true;
     } else if (presets[cameraPreset]) {
@@ -276,7 +309,7 @@ function formatShortIosVersion(raw) {
 }
 
 /**
- * Glowing 3D Isometric Zone Platform Pad (Draggable across the 3D floor grid)
+ * Glowing 3D Isometric Zone / Campus Building Platform Pad (Draggable across the 3D floor grid)
  */
 function ZonePlatform3D({
   padId,
@@ -286,10 +319,11 @@ function ZonePlatform3D({
   rimColor = '#38bdf8',
   title,
   subtitle,
-  showZoneTitles = false,
+  showZoneTitles = true,
   isDraggingThisPad = false,
   isParentOfDraggedDevice = false,
-  onStartPadDrag
+  onStartPadDrag,
+  onFocusPad
 }) {
   const [hovered, setHovered] = useState(false);
   const [w, h, d] = size;
@@ -299,7 +333,7 @@ function ZonePlatform3D({
     <group
       position={position}
       onPointerDown={(e) => {
-        if (onStartPadDrag) onStartPadDrag(e, padId);
+        if (onStartPadDrag) onStartPadDrag(e, padId, position[0], position[2]);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -368,18 +402,28 @@ function ZonePlatform3D({
         />
       </mesh>
 
-      {/* Optional Zone Title Pill (or shown while dragging/hovering the base corner) */}
-      {(showZoneTitles || activeHighlight) && title && (
-        <Html position={[-w / 2 + 0.6, 0.12, d / 2 + 0.55]} center={false} zIndexRange={[5, 0]}>
-          <div className="pointer-events-none select-none whitespace-nowrap px-2 py-0.5 rounded bg-slate-950/90 border border-slate-700/90 shadow">
+      {/* Building / Zone Name Plaque on Front Edge of Base */}
+      {(showZoneTitles || hovered || activeHighlight) && title && (
+        <Html position={[0, 0.18, d / 2 + 0.42]} center zIndexRange={[12, 0]}>
+          <div
+            onClick={(e) => {
+              if (onFocusPad) {
+                e.stopPropagation();
+                onFocusPad();
+              }
+            }}
+            className={`${
+              onFocusPad ? 'cursor-pointer hover:border-white ' : 'pointer-events-none '
+            }select-none whitespace-nowrap px-2.5 py-0.5 rounded-md bg-slate-950/92 border border-slate-700/90 shadow-lg transition`}
+          >
             <div
-              className="text-[9px] font-mono font-bold tracking-wider uppercase"
+              className="text-[9.5px] font-mono font-bold tracking-wider uppercase flex items-center gap-1"
               style={{ color: rimColor }}
             >
-              ✥ {title}
+              <span>✥ {title}</span>
             </div>
-            {subtitle && (
-              <div className="text-[8px] font-mono text-slate-400">{subtitle}</div>
+            {(hovered || activeHighlight) && subtitle && (
+              <div className="text-[8px] font-mono text-slate-300">{subtitle}</div>
             )}
           </div>
         </Html>
@@ -1045,7 +1089,7 @@ export default function MultiDevice3DTopologyScene({
   // 'all'      (All 2-line device details visible simultaneously)
   const [labelMode, setLabelMode] = useState('hover');
   const [showLinkBadges, setShowLinkBadges] = useState(false);
-  const [showZoneTitles, setShowZoneTitles] = useState(false);
+  const [showZoneTitles, setShowZoneTitles] = useState(true);
   const [multiXrayMode, setMultiXrayMode] = useState(false);
   const [multiExplode, setMultiExplode] = useState(0);
   const [isDrawerOpen, setIsDrawerOpen] = useState(true);
@@ -1106,22 +1150,25 @@ export default function MultiDevice3DTopologyScene({
       .catch(() => setSaveStatus('Saved Locally ✓'));
   }, []);
 
-  // Start dragging a 3D Square Zone Base
-  const handleStartPadDrag3D = useCallback((e, padId) => {
+  // Start dragging a 3D Square Zone Base (supports both static pads and dynamic bldg-<CODE> bases)
+  const handleStartPadDrag3D = useCallback((e, padId, fallbackCx = 0, fallbackCz = 0) => {
     e.stopPropagation();
     const hit = new THREE.Vector3();
     if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return;
     if (controlsRef.current) controlsRef.current.enabled = false;
 
     setLayout3D((curr) => {
-      const pad = curr.pads[padId] || DEFAULT_3D_LAYOUT.pads[padId];
+      const pad = curr.pads[padId] || DEFAULT_3D_LAYOUT.pads[padId] || {
+        cx: fallbackCx,
+        cz: fallbackCz
+      };
       const info = {
         kind: 'pad',
         id: padId,
         startX: hit.x,
         startZ: hit.z,
-        origX: pad.cx,
-        origZ: pad.cz,
+        origX: typeof pad.cx === 'number' ? pad.cx : fallbackCx,
+        origZ: typeof pad.cz === 'number' ? pad.cz : fallbackCz,
         moved: false
       };
       drag3DRef.current = info;
@@ -1172,14 +1219,14 @@ export default function MultiDevice3DTopologyScene({
     }
 
     if (current.kind === 'pad') {
-      const nextCx = +clamp(current.origX + deltaX, -18, 18).toFixed(2);
-      const nextCz = +clamp(current.origZ + deltaZ, -14, 14).toFixed(2);
+      const nextCx = +clamp(current.origX + deltaX, -95, 65).toFixed(2);
+      const nextCz = +clamp(current.origZ + deltaZ, -75, 75).toFixed(2);
       setLayout3D((prev) => ({
         ...prev,
         pads: {
           ...prev.pads,
           [current.id]: {
-            ...prev.pads[current.id],
+            ...(prev.pads[current.id] || {}),
             cx: nextCx,
             cz: nextCz
           }
@@ -1388,7 +1435,7 @@ export default function MultiDevice3DTopologyScene({
     return wlNode.attachedEndpoints || [];
   }, [wlNode]);
 
-  // Compute live 3D Coordinates for Every Device from its Parent Square Base + Relative Device Offset
+  // Compute live 3D Coordinates for Every Device on its Corresponding Campus Building Base!
   const positions = useMemo(() => {
     const getPos = (deviceId) => {
       const dev = layout3D.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
@@ -1422,48 +1469,233 @@ export default function MultiDevice3DTopologyScene({
       };
     });
 
-    // Dynamic Campus Switch Matrix for all discovered switches from tcore-9600
-    const count = additionalSwitches.length;
-    const cols = count <= 6 ? 2 : count <= 18 ? 3 : count <= 48 ? 6 : 9;
-    const rows = Math.max(1, Math.ceil(count / cols));
-    const colSpacing = 4.35;
-    const rowSpacing = 3.15;
-    const startX = -14.2;
-    const startZ = -((rows - 1) * rowSpacing) / 2;
+    // 1. Separate additionalSwitches into:
+    //    - corePeerSwitches (buildingCode === 'CORE' -> placed onto the Campus Core & Data Center Base!)
+    //    - banExtraSwitches (buildingCode === 'BAN'  -> placed onto the Bancroft Hall Base!)
+    //    - otherBuildingSwitches (DIC, ROB, BEC, UCH, LCH, ROT, GIO, SUB, KRN, NPT, WIL, MUS, UNI, etc.)
+    const corePeerSwitches = [];
+    const banExtraSwitches = [];
+    const otherBuildingMap = new Map();
 
-    const additionalSwitchPositions = additionalSwitches.map((sw, idx) => {
-      const col = idx % cols;
-      const row = Math.floor(idx / cols);
-      const pos = [
-        +(startX - col * colSpacing).toFixed(2),
-        0.2,
-        +(startZ + row * rowSpacing).toFixed(2)
-      ];
-      return { sw, pos };
+    for (const sw of additionalSwitches) {
+      const bCode = sw.buildingCode || 'OTHER';
+      if (bCode === 'CORE') {
+        corePeerSwitches.push(sw);
+      } else if (bCode === 'BAN') {
+        banExtraSwitches.push(sw);
+      } else {
+        if (!otherBuildingMap.has(bCode)) {
+          otherBuildingMap.set(bCode, {
+            code: bCode,
+            label: sw.buildingLabel || bCode,
+            switches: []
+          });
+        }
+        otherBuildingMap.get(bCode).switches.push(sw);
+      }
+    }
+
+    // 2. Place Core Peer Switches (mcore-9600, hcore, DC1-9500, DC1-9300-NET, WLCs, etc.) on the CORE Base
+    const corePadCfg = layout3D.pads.coreZone || DEFAULT_3D_LAYOUT.pads.coreZone;
+    const coreCols = 2;
+    const coreRows = Math.ceil(corePeerSwitches.length / coreCols);
+    const coreColSpacing = 4.1;
+    const coreRowSpacing = 2.85;
+    const expandedCoreW =
+      corePeerSwitches.length > 0
+        ? Math.max(corePadCfg.w, +(coreCols * coreColSpacing + 3.4).toFixed(2))
+        : corePadCfg.w;
+    const expandedCoreD =
+      corePeerSwitches.length > 0
+        ? Math.max(corePadCfg.d, +((coreRows + 1) * coreRowSpacing + 3.8).toFixed(2))
+        : corePadCfg.d;
+    const expandedCoreCz =
+      corePeerSwitches.length > 0
+        ? +(corePadCfg.cz - (expandedCoreD - corePadCfg.d) / 2).toFixed(2)
+        : corePadCfg.cz;
+
+    const corePeerPositions = corePeerSwitches.map((sw, idx) => {
+      const col = idx % coreCols;
+      const row = Math.floor(idx / coreCols);
+      const startX = corePadCfg.cx - ((coreCols - 1) * coreColSpacing) / 2;
+      const startZ = corePadCfg.cz - 3.6 - row * coreRowSpacing;
+      return {
+        sw,
+        pos: [+(startX + col * coreColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+      };
     });
 
-    const campusPad =
-      count > 0
-        ? {
-            cx: +(startX - ((cols - 1) * colSpacing) / 2).toFixed(2),
-            cz: 0,
-            w: +(cols * colSpacing + 3.2).toFixed(2),
-            d: +(rows * rowSpacing + 3.2).toFixed(2)
-          }
-        : null;
+    const coreZoneBox = {
+      cx: corePadCfg.cx,
+      cz: expandedCoreCz,
+      w: expandedCoreW,
+      d: expandedCoreD
+    };
+
+    // 3. Place additional Bancroft Hall switches (T-BAN-3FL-WL, T-BAN-DC-WL, bancroft2fl-meraki, mis-meraki) on the Bancroft Base!
+    const banPadCfg = layout3D.pads.switchZone || DEFAULT_3D_LAYOUT.pads.switchZone;
+    const banCols = 2;
+    const banRows = Math.ceil(banExtraSwitches.length / banCols);
+    const banColSpacing = 4.1;
+    const banRowSpacing = 2.95;
+    const expandedBanW = banPadCfg.w;
+    const expandedBanD =
+      banExtraSwitches.length > 0
+        ? Math.max(banPadCfg.d, +(banPadCfg.d + banRows * banRowSpacing + 0.8).toFixed(2))
+        : banPadCfg.d;
+    const expandedBanCz =
+      banExtraSwitches.length > 0
+        ? +(banPadCfg.cz + (expandedBanD - banPadCfg.d) / 2).toFixed(2)
+        : banPadCfg.cz;
+
+    const banExtraPositions = banExtraSwitches.map((sw, idx) => {
+      const col = idx % banCols;
+      const row = Math.floor(idx / banCols);
+      const startX = banPadCfg.cx - ((banCols - 1) * banColSpacing) / 2;
+      const startZ = banPadCfg.cz + 3.6 + row * banRowSpacing;
+      return {
+        sw,
+        pos: [+(startX + col * banColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+      };
+    });
+
+    const switchZoneBox = {
+      cx: banPadCfg.cx,
+      cz: expandedBanCz,
+      w: expandedBanW,
+      d: expandedBanD
+    };
+
+    // 4. Create an Individual 3D Campus Building Base ("Island") for Each Campus Building!
+    const sortedBuildingGroups = Array.from(otherBuildingMap.values()).sort(
+      (a, b) => b.switches.length - a.switches.length
+    );
+
+    // Precompute each building base's size (w, d) from its switch count
+    const sizedGroups = sortedBuildingGroups.map((grp) => {
+      const cnt = grp.switches.length;
+      const cols = cnt <= 2 ? cnt : cnt <= 6 ? 2 : cnt <= 12 ? 3 : cnt <= 20 ? 4 : 6;
+      const rows = Math.max(1, Math.ceil(cnt / cols));
+      const colSpacing = 4.15;
+      const rowSpacing = 2.95;
+      const w = Math.max(6.4, +(cols * colSpacing + 2.4).toFixed(2));
+      const d = Math.max(4.4, +(rows * rowSpacing + 2.4).toFixed(2));
+      return {
+        ...grp,
+        cols,
+        rows,
+        colSpacing,
+        rowSpacing,
+        w,
+        d
+      };
+    });
+
+    // Arrange Building Bases into 3 non-overlapping horizontal Campus Avenues to the West of Core & Bancroft
+    const isSingleFilteredBuilding = sizedGroups.length === 1;
+    const avenueCount = 3;
+    const avenueBuckets = [[], [], []];
+    const avenueWidths = [0, 0, 0];
+
+    sizedGroups.forEach((grp) => {
+      // Pick the avenue with the smallest accumulated width so avenues stay balanced in length
+      let bestAvenue = 0;
+      for (let a = 1; a < avenueCount; a += 1) {
+        if (avenueWidths[a] < avenueWidths[bestAvenue]) {
+          bestAvenue = a;
+        }
+      }
+      avenueBuckets[bestAvenue].push(grp);
+      avenueWidths[bestAvenue] += grp.w + 3.4;
+    });
+
+    // Compute safe Z center for each of the 3 avenues based on maximum building depth in that avenue
+    const maxDepth0 = Math.max(8, ...avenueBuckets[0].map((g) => g.d));
+    const maxDepth1 = Math.max(8, ...avenueBuckets[1].map((g) => g.d));
+    const maxDepth2 = Math.max(8, ...avenueBuckets[2].map((g) => g.d));
+    const avenueCentersZ = [
+      0, // Center Avenue (Avenue 0)
+      -(maxDepth0 / 2 + maxDepth1 / 2 + 4.2), // North Avenue (Avenue 1)
+      +(maxDepth0 / 2 + maxDepth2 / 2 + 4.2) // South Avenue (Avenue 2)
+    ];
+
+    const buildingBases = [];
+    const allAdditionalSwitchPositions = [...corePeerPositions, ...banExtraPositions];
+
+    avenueBuckets.forEach((bucket, avenueIdx) => {
+      let cursorRightEdgeX = -12.5;
+      const defaultCz = isSingleFilteredBuilding ? 0 : +avenueCentersZ[avenueIdx].toFixed(2);
+
+      bucket.forEach((grp) => {
+        const padId = `bldg-${grp.code}`;
+        const defaultCx = isSingleFilteredBuilding
+          ? +(-11.8 - grp.w / 2).toFixed(2)
+          : +(cursorRightEdgeX - grp.w / 2).toFixed(2);
+        cursorRightEdgeX -= grp.w + 3.4;
+
+        const savedPad = layout3D.pads[padId];
+        const cx = typeof savedPad?.cx === 'number' ? savedPad.cx : defaultCx;
+        const cz = typeof savedPad?.cz === 'number' ? savedPad.cz : defaultCz;
+        const theme = getBuildingBaseTheme(grp.code);
+
+        const startLocalX = -((grp.cols - 1) * grp.colSpacing) / 2;
+        const startLocalZ = -((grp.rows - 1) * grp.rowSpacing) / 2;
+
+        const switchPositions = grp.switches.map((sw, idx) => {
+          const col = idx % grp.cols;
+          const row = Math.floor(idx / grp.cols);
+          const pos = [
+            +(cx + startLocalX + col * grp.colSpacing).toFixed(2),
+            0.2,
+            +(cz + startLocalZ + row * grp.rowSpacing).toFixed(2)
+          ];
+          const item = { sw, pos, buildingCode: grp.code };
+          allAdditionalSwitchPositions.push(item);
+          return item;
+        });
+
+        buildingBases.push({
+          padId,
+          code: grp.code,
+          label: grp.label,
+          cx,
+          cz,
+          w: grp.w,
+          d: grp.d,
+          theme,
+          switches: grp.switches,
+          switchPositions
+        });
+      });
+    });
 
     return {
       corePos,
       wlPos,
       wsPos,
+      coreZoneBox,
+      switchZoneBox,
+      corePeerPositions,
+      banExtraPositions,
+      buildingBases,
       apPositions,
       coloSites,
-      additionalSwitchPositions,
-      campusPad
+      additionalSwitchPositions: allAdditionalSwitchPositions
     };
   }, [attachedAps, layout3D, additionalSwitches]);
 
-  // Build 3D Conduits Connecting Exact Live Front-Panel Port Coordinates on the Realistic 3D Switches
+  // Selected entity in the 3D scene (defaults to T-BAN-2FL-WL so the drawer immediately shows rich telemetry)
+  const [selected3DEntity, setSelected3DEntity] = useState(null);
+
+  const activeEntity = useMemo(() => {
+    if (selected3DEntity) return selected3DEntity;
+    if (wlNode) {
+      return { type: 'device', data: wlNode, id: wlNode.id, pos: positions.wlPos };
+    }
+    return null;
+  }, [selected3DEntity, wlNode, positions.wlPos]);
+
+  // Build 3D Conduits Connecting Exact Live Front-Panel Port Coordinates & Campus Building Bases
   const conduits3D = useMemo(() => {
     const list = [];
 
@@ -1530,7 +1762,35 @@ export default function MultiDevice3DTopologyScene({
       });
     }
 
-    // 2b. Live 25G/100G Core Uplinks from tcore-9600 to all visible Campus Building & Core Peer Switches
+    // 2b. Campus Building Fiber Trunk Conduits from tcore-9600 to Each Campus Building Base!
+    if (coreNode && positions.buildingBases.length > 0) {
+      positions.buildingBases.forEach((bldg, bIdx) => {
+        list.push({
+          id: `bldg-trunk-${bldg.code}`,
+          isPrimaryTrunk: false,
+          verified: true,
+          color: bldg.theme.rimColor,
+          radius: 0.08,
+          badgeTitle: `BUILDING FIBER TRUNK: tcore-9600 ↔ ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCHES)`,
+          badgeSubtitle: `25G/100G Single-Mode Campus Fiber Bundle • Click Base Plaque to Filter ${bldg.code}`,
+          sourceHostname: coreNode.hostname,
+          sourcePort: `Campus Fiber Bundle (${bldg.code})`,
+          targetHostname: `${bldg.label} (${bldg.code})`,
+          targetPort: `${bldg.switches.length} IDF/MDF Switches`,
+          speed: '25G / 100G Campus Fiber Trunk',
+          nativeVlan: '1',
+          allowedVlans: 'All Building VLANs',
+          startPos: [
+            positions.corePos[0] - 1.1,
+            1.35 + ((bIdx % 4) * 0.14),
+            positions.corePos[2] + (((bIdx % 5) - 2) * 0.28)
+          ],
+          endPos: [bldg.cx + bldg.w / 2 - 0.6, 0.35, bldg.cz]
+        });
+      });
+    }
+
+    // 2c. Switch-Level 25G/100G Fiber Uplinks (shown when a building is filtered, when Trunks=On, for Core/Bancroft peers, or for the currently selected switch!)
     if (coreNode && positions.additionalSwitchPositions.length > 0) {
       const linksByTargetKey = new Map();
       for (const lnk of globalGraph.switchLinks || []) {
@@ -1549,7 +1809,16 @@ export default function MultiDevice3DTopologyScene({
         }
       }
 
+      const showAllSwitchConduits =
+        positions.additionalSwitchPositions.length <= 24 || showLinkBadges;
+
       positions.additionalSwitchPositions.forEach(({ sw, pos }, idx) => {
+        const isSelectedSwitch = activeEntity?.id === sw.id;
+        const isCoreOrBan = sw.buildingCode === 'CORE' || sw.buildingCode === 'BAN';
+        if (!showAllSwitchConduits && !isSelectedSwitch && !isCoreOrBan && !sw.isPolled) {
+          return;
+        }
+
         const matchedLinks = linksByTargetKey.get(sw.key) || [];
         const primary = matchedLinks[0];
         const isMeraki = /MS350|MERAKI/i.test(`${sw.model} ${sw.hostname}`);
@@ -1562,10 +1831,10 @@ export default function MultiDevice3DTopologyScene({
 
         list.push({
           id: `core-to-${sw.id}`,
-          isPrimaryTrunk: false,
+          isPrimaryTrunk: isSelectedSwitch,
           verified: sw.isPolled,
           color: linkColor,
-          radius: positions.additionalSwitchPositions.length > 25 ? 0.042 : 0.068,
+          radius: isSelectedSwitch ? 0.095 : 0.06,
           badgeTitle: `[${sw.buildingCode}] ${srcPort} ↔ ${dstPort}${dualSuffix}`,
           badgeSubtitle: `${coreNode.hostname} ↔ ${sw.hostname} (${sw.model})`,
           sourceHostname: coreNode.hostname,
@@ -1635,18 +1904,15 @@ export default function MultiDevice3DTopologyScene({
     }
 
     return list;
-  }, [positions, wlNode, workStudyNode, coreNode, globalGraph.switchLinks]);
-
-  // Selected entity in the 3D scene (defaults to T-BAN-2FL-WL so the drawer immediately shows rich telemetry)
-  const [selected3DEntity, setSelected3DEntity] = useState(null);
-
-  const activeEntity = useMemo(() => {
-    if (selected3DEntity) return selected3DEntity;
-    if (wlNode) {
-      return { type: 'device', data: wlNode, id: wlNode.id, pos: positions.wlPos };
-    }
-    return null;
-  }, [selected3DEntity, wlNode, positions.wlPos]);
+  }, [
+    positions,
+    wlNode,
+    workStudyNode,
+    coreNode,
+    globalGraph.switchLinks,
+    showLinkBadges,
+    activeEntity
+  ]);
 
   const handleSelectEntity = (entity) => {
     setSelected3DEntity(entity);
@@ -1804,9 +2070,9 @@ export default function MultiDevice3DTopologyScene({
                 ? 'bg-purple-500/20 text-purple-300 border-purple-500/40 font-bold'
                 : 'bg-slate-900 text-slate-400 border-slate-800 hover:text-white'
             }`}
-            title="Toggle Zone Floor Titles"
+            title="Toggle Building Base Plaques & Zone Titles"
           >
-            Zones: {showZoneTitles ? 'On' : 'Off'}
+            Building Plaques: {showZoneTitles ? 'On' : 'Off'}
           </button>
 
           {/* 3D Hardware Chassis X-Ray & Explode Controls for All Switches in Scene */}
@@ -1874,7 +2140,7 @@ export default function MultiDevice3DTopologyScene({
         >
           <Canvas shadows dpr={[1, 2]}>
             <color attach="background" args={[bgColor]} />
-            <fog attach="fog" args={[bgColor, 65, 195]} />
+            <fog attach="fog" args={[bgColor, 75, 220]} />
 
             <PerspectiveCamera makeDefault position={[-16, 21, 25]} fov={38} />
             <TopologyCameraRig
@@ -1888,7 +2154,7 @@ export default function MultiDevice3DTopologyScene({
               dampingFactor={0.07}
               maxPolarAngle={Math.PI / 2 - 0.03}
               minDistance={4}
-              maxDistance={150}
+              maxDistance={175}
             />
 
             {/* Studio Architectural & Hardware Faceplate Lighting */}
@@ -1913,42 +2179,51 @@ export default function MultiDevice3DTopologyScene({
                 rotation={[-Math.PI / 2, 0, 0]}
                 onPointerMove={handleFloorPointerMove3D}
               >
-                <planeGeometry args={[200, 200]} />
+                <planeGeometry args={[260, 260]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} />
               </mesh>
             )}
 
             {/* Blueprint Engineering Floor Grid */}
             <Grid
-              position={[-10, -0.18, 0]}
-              args={[120, 120]}
+              position={[-18, -0.18, 0]}
+              args={[160, 160]}
               cellSize={1.5}
               cellThickness={0.6}
               cellColor="#1e3a5f"
               sectionSize={6}
               sectionThickness={1.2}
               sectionColor="#0284c7"
-              fadeDistance={135}
+              fadeDistance={165}
               fadeStrength={1.2}
             />
 
             {/* ===============================================================
-                ZONE PAD 1: TIER 1 CAMPUS CORE ZONE (tcore-9600.net.fdu.edu)
+                BUILDING BASE 1: CAMPUS CORE & DATA CENTER (CORE)
+                (tcore-9600 + mcore-9600, hcore, DC1-9500, DC1-9300-NET, WLCs)
                =============================================================== */}
             <ZonePlatform3D
               padId="coreZone"
-              position={[layout3D.pads.coreZone.cx, 0, layout3D.pads.coreZone.cz]}
-              size={[layout3D.pads.coreZone.w, 0.36, layout3D.pads.coreZone.d]}
+              position={[positions.coreZoneBox.cx, 0, positions.coreZoneBox.cz]}
+              size={[positions.coreZoneBox.w, 0.36, positions.coreZoneBox.d]}
               baseColor="#17162e"
               rimColor="#fb923c"
-              title="ZONE 1 • TIER 1 CAMPUS CORE (METRO)"
-              subtitle="Drag Base to Move Zone • Drag Core Tower Inside Base"
+              title={`CORE • CAMPUS CORE & DATA CENTER (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
+              subtitle="tcore-9600 + Data Center 9500/9300 Fabric • Click Plaque to Filter CORE"
               showZoneTitles={showZoneTitles}
               isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
               isParentOfDraggedDevice={
                 active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coreZone'
               }
               onStartPadDrag={handleStartPadDrag3D}
+              onClickTitle={
+                onSelectBuildingFilter
+                  ? () =>
+                      onSelectBuildingFilter(
+                        selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
+                      )
+                  : undefined
+              }
             />
 
             {coreNode && (
@@ -1965,18 +2240,42 @@ export default function MultiDevice3DTopologyScene({
               />
             )}
 
+            {positions.corePeerPositions.map(({ sw, pos }) => {
+              const useCompact = positions.additionalSwitchPositions.length > 18;
+              return (
+                <SwitchC9300Node3D
+                  key={sw.id}
+                  node={sw}
+                  position={pos}
+                  portsData={
+                    useCompact
+                      ? []
+                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                  }
+                  isSelected={activeEntity?.id === sw.id}
+                  isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                  onSelect={handleSelectEntity}
+                  onOpenHwDrawer={onOpenHwDrawer}
+                  labelMode={labelMode}
+                  xrayMode={multiXrayMode}
+                  explodeFactor={multiExplode}
+                  useCompactMesh={useCompact}
+                />
+              );
+            })}
+
             {/* ===============================================================
-                ZONE PAD 2: BANCROFT HALL MDF / IDF SWITCH FABRIC ZONE
-                (T-BAN-2FL-WL + T-BAN-2FL-WorkStudy-C9300)
+                BUILDING BASE 2: BANCROFT HALL (BAN)
+                (T-BAN-2FL-WL + WorkStudy + T-BAN-3FL-WL + T-BAN-DC-WL + Merakis)
                =============================================================== */}
             <ZonePlatform3D
               padId="switchZone"
-              position={[layout3D.pads.switchZone.cx, 0, layout3D.pads.switchZone.cz]}
-              size={[layout3D.pads.switchZone.w, 0.36, layout3D.pads.switchZone.d]}
+              position={[positions.switchZoneBox.cx, 0, positions.switchZoneBox.cz]}
+              size={[positions.switchZoneBox.w, 0.36, positions.switchZoneBox.d]}
               baseColor="#091d34"
               rimColor="#10b981"
-              title="ZONE 2 • BANCROFT HALL SWITCH FABRIC (2× POLLED C9300-24UX)"
-              subtitle="Verified 10G Trunk: Te1/0/20 ↔ Te1/0/24 (VLAN 133 Native)"
+              title={`BAN • BANCROFT HALL (${(wlNode ? 1 : 0) + (workStudyNode ? 1 : 0) + positions.banExtraPositions.length} SWITCHES)`}
+              subtitle="2 Polled C9300-24UX + 4 Discovered Bancroft Switches • Click Plaque to Filter BAN"
               showZoneTitles={showZoneTitles}
               isDraggingThisPad={
                 active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
@@ -1985,6 +2284,14 @@ export default function MultiDevice3DTopologyScene({
                 active3DDrag?.kind === 'device' && active3DDrag?.padId === 'switchZone'
               }
               onStartPadDrag={handleStartPadDrag3D}
+              onClickTitle={
+                onSelectBuildingFilter
+                  ? () =>
+                      onSelectBuildingFilter(
+                        selectedBuildingFilter === 'BAN' ? 'ALL' : 'BAN'
+                      )
+                  : undefined
+              }
             />
 
             {wlNode && (
@@ -2023,27 +2330,8 @@ export default function MultiDevice3DTopologyScene({
               />
             )}
 
-            {/* ===============================================================
-                ZONE PAD 5: DISCOVERED CAMPUS BUILDINGS & IDF SWITCH MATRIX
-                (All switches discovered via tcore-9600 CDP, grouped by Building)
-               =============================================================== */}
-            {positions.campusPad && (
-              <ZonePlatform3D
-                padId="campusZone"
-                position={[positions.campusPad.cx, 0, positions.campusPad.cz]}
-                size={[positions.campusPad.w, 0.36, positions.campusPad.d]}
-                baseColor="#08162b"
-                rimColor="#38bdf8"
-                title={`ZONE 5 • CAMPUS SWITCH FABRIC (${positions.additionalSwitchPositions.length} SWITCHES CONNECTED TO TCORE-9600)`}
-                subtitle="Filter by Building in Top Bar or Hover/Click Any Switch for Full 48-Port 3D Chassis & Fiber Link"
-                showZoneTitles={showZoneTitles}
-                isDraggingThisPad={false}
-                isParentOfDraggedDevice={false}
-              />
-            )}
-
-            {positions.additionalSwitchPositions.map(({ sw, pos }) => {
-              const useCompact = positions.additionalSwitchPositions.length > 14;
+            {positions.banExtraPositions.map(({ sw, pos }) => {
+              const useCompact = positions.additionalSwitchPositions.length > 18;
               return (
                 <SwitchC9300Node3D
                   key={sw.id}
@@ -2063,6 +2351,62 @@ export default function MultiDevice3DTopologyScene({
                   explodeFactor={multiExplode}
                   useCompactMesh={useCompact}
                 />
+              );
+            })}
+
+            {/* ===============================================================
+                INDIVIDUAL CAMPUS BUILDING BASES (DIC, ROB, BEC, UCH, LCH, ROT, GIO, SUB, KRN, NPT, WIL, MUS, UNI, etc.)
+                Each Campus Building has its own color-coded, draggable 3D Base!
+               =============================================================== */}
+            {positions.buildingBases.map((bldg) => {
+              const useCompact = positions.additionalSwitchPositions.length > 18;
+              return (
+                <group key={bldg.padId}>
+                  <ZonePlatform3D
+                    padId={bldg.padId}
+                    position={[bldg.cx, 0, bldg.cz]}
+                    size={[bldg.w, 0.36, bldg.d]}
+                    baseColor={bldg.theme.baseColor}
+                    rimColor={bldg.theme.rimColor}
+                    title={`${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'})`}
+                    subtitle="Drag Building Base to Reposition • Click Plaque to Filter Building"
+                    showZoneTitles={showZoneTitles}
+                    isDraggingThisPad={
+                      active3DDrag?.kind === 'pad' && active3DDrag?.id === bldg.padId
+                    }
+                    isParentOfDraggedDevice={false}
+                    onStartPadDrag={handleStartPadDrag3D}
+                    onClickTitle={
+                      onSelectBuildingFilter
+                        ? () =>
+                            onSelectBuildingFilter(
+                              selectedBuildingFilter === bldg.code ? 'ALL' : bldg.code
+                            )
+                        : undefined
+                    }
+                  />
+
+                  {bldg.switchPositions.map(({ sw, pos }) => (
+                    <SwitchC9300Node3D
+                      key={sw.id}
+                      node={sw}
+                      position={pos}
+                      portsData={
+                        useCompact
+                          ? []
+                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                      }
+                      isSelected={activeEntity?.id === sw.id}
+                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                      onSelect={handleSelectEntity}
+                      onOpenHwDrawer={onOpenHwDrawer}
+                      labelMode={labelMode}
+                      xrayMode={multiXrayMode}
+                      explodeFactor={multiExplode}
+                      useCompactMesh={useCompact}
+                    />
+                  ))}
+                </group>
               );
             })}
 
