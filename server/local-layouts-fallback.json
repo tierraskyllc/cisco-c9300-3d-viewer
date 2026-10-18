@@ -1,132 +1,4 @@
 {
-  "multi_device_3d_v1": {
-    "pads": {
-      "coreZone": {
-        "cx": -10.07,
-        "cz": -9.07,
-        "w": 8.2,
-        "d": 5.2
-      },
-      "switchZone": {
-        "cx": -10.86,
-        "cz": 4.46,
-        "w": 9.8,
-        "d": 8.6
-      },
-      "apZone": {
-        "cx": 4.79,
-        "cz": 5.18,
-        "w": 9.6,
-        "d": 9.8
-      },
-      "coloZone": {
-        "cx": 4.89,
-        "cz": -9.13,
-        "w": 9.6,
-        "d": 5.2
-      }
-    },
-    "devices": {
-      "coreNode": {
-        "dx": 0,
-        "dz": 0,
-        "padId": "coreZone",
-        "maxDx": 3.4,
-        "maxDz": 2.2
-      },
-      "wlNode": {
-        "dx": 2.2,
-        "dz": -2,
-        "padId": "switchZone",
-        "maxDx": 4.2,
-        "maxDz": 3.8
-      },
-      "wsNode": {
-        "dx": -2.2,
-        "dz": 2,
-        "padId": "switchZone",
-        "maxDx": 4.2,
-        "maxDz": 3.8
-      },
-      "ap-0": {
-        "dx": -2.2,
-        "dz": -3.8,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-1": {
-        "dx": 2.2,
-        "dz": -3.8,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-2": {
-        "dx": -2.2,
-        "dz": -1.25,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-3": {
-        "dx": 2.2,
-        "dz": -1.25,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-4": {
-        "dx": -2.2,
-        "dz": 1.3,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-5": {
-        "dx": 2.2,
-        "dz": 1.3,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "ap-6": {
-        "dx": -2.2,
-        "dz": 3.85,
-        "padId": "apZone",
-        "maxDx": 4.3,
-        "maxDz": 4.5
-      },
-      "colo-Halsey165": {
-        "dx": -2.2,
-        "dz": -1.3,
-        "padId": "coloZone",
-        "maxDx": 4.2,
-        "maxDz": 2.3
-      },
-      "colo-Hastings": {
-        "dx": 2.2,
-        "dz": -1.3,
-        "padId": "coloZone",
-        "maxDx": 4.2,
-        "maxDz": 2.3
-      },
-      "colo-Florham": {
-        "dx": -2.2,
-        "dz": 1.4,
-        "padId": "coloZone",
-        "maxDx": 4.2,
-        "maxDz": 2.3
-      },
-      "colo-VancOakridge": {
-        "dx": 2.2,
-        "dz": 1.4,
-        "padId": "coloZone",
-        "maxDx": 4.2,
-        "maxDz": 2.3
-      }
-    }
-  },
   "isometric_blueprint_v1": {
     "pads": {
       "corePad": {
@@ -284,8 +156,8 @@
         "maxDy": 85
       },
       "globalFlorham": {
-        "dx": 0,
-        "dy": -10,
+        "dx": -155,
+        "dy": -38,
         "padId": "florhamPad",
         "maxDx": 155,
         "maxDy": 85
@@ -303,6 +175,134 @@
         "padId": "vancPad",
         "maxDx": 165,
         "maxDy": 85
+      }
+    }
+  },
+  "multi_device_3d_v1": {
+    "pads": {
+      "coreZone": {
+        "cx": -3.66,
+        "cz": -2.69,
+        "w": 8.2,
+        "d": 5.2
+      },
+      "switchZone": {
+        "cx": -4.69,
+        "cz": 5.33,
+        "w": 9.8,
+        "d": 8.6
+      },
+      "apZone": {
+        "cx": 6.77,
+        "cz": 8.23,
+        "w": 9.6,
+        "d": 9.8
+      },
+      "coloZone": {
+        "cx": 7,
+        "cz": -14,
+        "w": 9.6,
+        "d": 5.2
+      }
+    },
+    "devices": {
+      "coreNode": {
+        "dx": 0,
+        "dz": 0,
+        "padId": "coreZone",
+        "maxDx": 3.4,
+        "maxDz": 2.2
+      },
+      "wlNode": {
+        "dx": 2.2,
+        "dz": -2,
+        "padId": "switchZone",
+        "maxDx": 4.2,
+        "maxDz": 3.8
+      },
+      "wsNode": {
+        "dx": -2.2,
+        "dz": 2,
+        "padId": "switchZone",
+        "maxDx": 4.2,
+        "maxDz": 3.8
+      },
+      "ap-0": {
+        "dx": -2.2,
+        "dz": -3.8,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-1": {
+        "dx": 2.2,
+        "dz": -3.8,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-2": {
+        "dx": -2.2,
+        "dz": -1.25,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-3": {
+        "dx": 2.2,
+        "dz": -1.25,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-4": {
+        "dx": -2.2,
+        "dz": 1.3,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-5": {
+        "dx": 2.2,
+        "dz": 1.3,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "ap-6": {
+        "dx": -2.2,
+        "dz": 3.85,
+        "padId": "apZone",
+        "maxDx": 4.3,
+        "maxDz": 4.5
+      },
+      "colo-Halsey165": {
+        "dx": -2.2,
+        "dz": -1.3,
+        "padId": "coloZone",
+        "maxDx": 4.2,
+        "maxDz": 2.3
+      },
+      "colo-Hastings": {
+        "dx": 2.2,
+        "dz": -1.3,
+        "padId": "coloZone",
+        "maxDx": 4.2,
+        "maxDz": 2.3
+      },
+      "colo-Florham": {
+        "dx": -2.2,
+        "dz": 1.4,
+        "padId": "coloZone",
+        "maxDx": 4.2,
+        "maxDz": 2.3
+      },
+      "colo-VancOakridge": {
+        "dx": 2.2,
+        "dz": 1.4,
+        "padId": "coloZone",
+        "maxDx": 4.2,
+        "maxDz": 2.3
       }
     }
   }

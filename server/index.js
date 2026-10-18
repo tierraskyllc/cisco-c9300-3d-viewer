@@ -274,7 +274,7 @@ function pollCiscoSwitchViaSsh({
   username,
   password,
   enableSecret = '',
-  timeoutMs = 180000
+  timeoutMs = 300000
 }) {
   return new Promise((resolve, reject) => {
     const conn = new SshClient();
@@ -361,12 +361,12 @@ function pollCiscoSwitchViaSsh({
               await waitForPattern(/[>#]\s*$/, 10000);
             }
 
-            // Execute each of the 7 show commands sequentially (75s per command for large core chassis like tcore-9600)
+            // Execute each of the 7 show commands sequentially (120s per command for 300+ neighbor core chassis like mcore-9600 / tcore-9600)
             for (const item of COMMAND_PLAN) {
               const t0 = Date.now();
               buffer = '';
               stream.write(`${item.cmd}\n`);
-              const rawText = await waitForPattern(/\r?\n[^\r\n]*[>#]\s*$/, 75000);
+              const rawText = await waitForPattern(/\r?\n[^\r\n]*[>#]\s*$/, 120000);
               const durationMs = Date.now() - t0;
 
               // Strip trailing prompt line cleanly while keeping the command header

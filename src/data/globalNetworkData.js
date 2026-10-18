@@ -248,6 +248,40 @@ export function inferSiteCode(hostnameOrObj = '', rawSiteName = '') {
     hostname = String(hostnameOrObj || '');
   }
 
+  const h = String(hostname).trim().toUpperCase();
+  if (h.includes('HALSEY') || h.startsWith('H165') || h.startsWith('HCORE')) {
+    return 'Halsey165';
+  }
+  if (h.startsWith('V-') || h.startsWith('VCORE') || h.includes('VANC') || h.includes('OAK')) {
+    return 'VancOakridge';
+  }
+  if (h.includes('HAST')) {
+    return 'Hastings';
+  }
+  if (
+    h.startsWith('M-') ||
+    h.startsWith('MCORE') ||
+    h.startsWith('F-') ||
+    h.startsWith('FCORE') ||
+    h.startsWith('DC2-') ||
+    h.startsWith('FLO-') ||
+    h.includes('FLOR') ||
+    h.includes('MADISON') ||
+    /\b129\.\d+\b/.test(h) ||
+    String(mgmtIp).startsWith('132.238.129.')
+  ) {
+    return 'Florham';
+  }
+  if (
+    h.startsWith('T-') ||
+    h.startsWith('TCORE') ||
+    h.startsWith('DC1-') ||
+    h.includes('-BAN-') ||
+    h.includes('METRO')
+  ) {
+    return 'Metro';
+  }
+
   const s = String(siteHint || '').trim();
   if (GLOBAL_SITES_BY_CODE[s]) return s;
   const sUpper = s.toUpperCase();
@@ -256,20 +290,6 @@ export function inferSiteCode(hostnameOrObj = '', rawSiteName = '') {
   if (sUpper.includes('HASTINGS')) return 'Hastings';
   if (sUpper.includes('VANC') || sUpper.includes('OAKRIDGE')) return 'VancOakridge';
   if (sUpper.includes('METRO')) return 'Metro';
-
-  const h = String(hostname).trim().toUpperCase();
-  if (
-    h.startsWith('T-') ||
-    h.startsWith('TCORE') ||
-    h.includes('-BAN-') ||
-    h.includes('METRO')
-  ) {
-    return 'Metro';
-  }
-  if (h.startsWith('F-') || h.startsWith('FCORE') || h.includes('FLOR')) return 'Florham';
-  if (h.includes('HALSEY') || h.startsWith('H165')) return 'Halsey165';
-  if (h.startsWith('V-') || h.includes('VANC') || h.includes('OAK')) return 'VancOakridge';
-  if (h.includes('HAST')) return 'Hastings';
 
   if (String(mgmtIp).startsWith('132.238.')) return 'Metro';
 
@@ -284,7 +304,7 @@ export function normalizeHostname(name = '') {
     .toUpperCase();
 }
 
-// // Known FDU Building Codes & Friendly Names (automatically supplemented by any <CAMPUS>-<CODE>-* prefix discovered via CDP)
+// Known FDU Building Codes & Friendly Names (Metro + Florham/Madison Campuses, supplemented by any <CAMPUS>-<CODE>-* prefix discovered via CDP)
 export const FDU_BUILDING_DIRECTORY = {
   CORE: 'Campus Core & Data Center (CORE)',
   BAN: 'Bancroft Hall (BAN)',
@@ -296,7 +316,7 @@ export const FDU_BUILDING_DIRECTORY = {
   BEC: 'Becton Hall & Labs (BEC)',
   ROT: 'Rothman Center & Fieldhouse (ROT)',
   GIO: 'Giovatto Library (GIO)',
-  LIB: 'Giovatto Library (GIO)',
+  LIB: 'Campus Library (LIB)',
   SUB: 'Student Union Building (SUB)',
   SUB7: 'Student Union SUB7 (SUB)',
   NPT: 'Northpointe Hall (NPT)',
@@ -312,7 +332,39 @@ export const FDU_BUILDING_DIRECTORY = {
   FDH: 'Fordmansion / FDH (FDH)',
   INT: 'International House (INT)',
   BBF: 'Baseball Field (BBF)',
-  BOGOTA: 'Bogota / Rothman SB (ROT)'
+  BOGOTA: 'Bogota / Rothman SB (ROT)',
+  // Florham / Madison Campus Buildings (mcore-9600)
+  HEN: 'Hennessy Hall / Mansion (HEN)',
+  MAN: 'Hennessy Hall / Mansion (HEN)',
+  MON: 'Monninger Center & Library (MON)',
+  SCI: 'Science Building (SCI)',
+  ZEN: 'Stadler / Zenner Hoffmann Hall (ZEN)',
+  DRE: 'Dreyfuss Building (DRE)',
+  TWK: 'Twombly / Florence / Hamilton Halls (TWK)',
+  TWM: 'Twombly / Florence / Hamilton Halls (TWK)',
+  TWO: 'Twombly / Florence / Hamilton Halls (TWK)',
+  VIL: 'The Village Residence Halls (VIL)',
+  PRK: 'Park Avenue Residence Halls (PRK)',
+  PARK: 'Park Avenue Residence Halls (PRK)',
+  STU: 'Florham Student Center (STU)',
+  FSC: 'Florham Student Center (STU)',
+  REC: 'Ferguson Recreation Center (REC)',
+  FER: 'Ferguson Recreation Center (REC)',
+  RUT: 'Rutherford Hall (RUT)',
+  RUTH: 'Rutherford Hall (RUT)',
+  SOP: 'School of Pharmacy & Health Sciences (SOP)',
+  WEL: 'Wellness Center (WEL)',
+  COT: 'Campus Cottages (COT)',
+  CHA: 'Chapel & Chiller Plant (CHA)',
+  DAN: 'Danforth Hall (DAN)',
+  LWN: 'The Lawn Residence Halls (LWN)',
+  RIC: 'Rice Hall (RIC)',
+  GAT: 'Gatehouse & Public Safety (GAT)',
+  BRN: 'Barn Theater & Fine Arts (BRN)',
+  CHL: 'Chiller / Central Plant (CHL)',
+  STAD: 'Robert Shields Stadium (STAD)',
+  FFB: 'Florham Football / Athletics (FFB)',
+  BFB: 'Florham Baseball / Field (BFB)'
 };
 
 export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole = '') {
@@ -322,7 +374,7 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
 
   if (
     nodeRole === 'core-switch' ||
-    /^TCORE|^MCORE|^HCORE|^FCORE|CORE-9600|C9606|\bDC1-|\bDC-1-|DATACENTER|\bWLC\b|PRODUCTION-RACK|LABRACK/i.test(
+    /^TCORE|^MCORE|^HCORE|^FCORE|CORE-9600|C9606|\bDC1-|\bDC-1-|\bDC2-|DATACENTER|\bWLC\b|PRODUCTION-RACK|LABRACK/i.test(
       combined
     )
   ) {
@@ -332,21 +384,72 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
     };
   }
 
-  // Match FDU hostname pattern: <CAMPUS_LETTER>-<BUILDING_CODE>-... or <CAMPUS_LETTER>-<BUILDING_CODE> (e.g. T-BAN-2FL-WL, T-BBF)
-  const prefixMatch = norm.match(/^[TFVH]-([A-Z0-9]{2,8})(?:-|$)/i);
+  // Match FDU hostname pattern across Metro (T-), Florham/Madison (M- or F-), Vancouver (V-), Halsey (H-):
+  // e.g. T-BAN-2FL-WL, M-SCI-1FL, M-VIL1-1FL, T-BBF
+  const prefixMatch = norm.match(/^[TFMVH]-([A-Z0-9]{2,8})(?:-|$)/i);
   if (prefixMatch) {
     let code = prefixMatch[1].toUpperCase();
     if (code === 'DICK') code = 'DIC';
-    if (code === 'LIB') code = 'GIO';
+    if (code === 'LIB' && norm.startsWith('T-')) code = 'GIO';
+    if (code === 'LIB' && (norm.startsWith('M-') || norm.startsWith('F-'))) code = 'MON';
     if (code === 'SUB7') code = 'SUB';
     if (code === 'BOGOTA') code = 'ROT';
+    if (code === 'MAN') code = 'HEN';
+    if (code === 'TWO' || code === 'TWM') code = 'TWK';
+    if (code === 'FSC') code = 'STU';
+    if (code === 'FER') code = 'REC';
+    if (code === 'RUTH') code = 'RUT';
+    if (code === 'PARK') code = 'PRK';
+    if (/^VIL\d+$/i.test(code)) code = 'VIL';
     return {
       buildingCode: code,
       buildingLabel: FDU_BUILDING_DIRECTORY[code] || `${code} Building (${code})`
     };
   }
 
-  // Match real FDU Meraki & Catalyst interface descriptions on tcore-9600
+  // Match real FDU Meraki & Catalyst interface descriptions on tcore-9600 (Metro) and mcore-9600 (Florham)
+  if (/SCHOOL-PHAR|\bSOP\d*|\bPHRMCY/i.test(combined)) {
+    return { buildingCode: 'SOP', buildingLabel: FDU_BUILDING_DIRECTORY.SOP };
+  }
+  if (/VILLAGE|\bVIL\d/i.test(combined)) {
+    return { buildingCode: 'VIL', buildingLabel: FDU_BUILDING_DIRECTORY.VIL };
+  }
+  if (/DREYFUSS|\bDREY/i.test(combined)) {
+    return { buildingCode: 'DRE', buildingLabel: FDU_BUILDING_DIRECTORY.DRE };
+  }
+  if (/MANSION|HENNESSY|\bHEN\b/i.test(combined)) {
+    return { buildingCode: 'HEN', buildingLabel: FDU_BUILDING_DIRECTORY.HEN };
+  }
+  if (/MONNINGER|LIBBOILER|LEARNING-CENTER|\bEOF-F|\bMON\b/i.test(combined)) {
+    return { buildingCode: 'MON', buildingLabel: FDU_BUILDING_DIRECTORY.MON };
+  }
+  if (/PARKAVE|\bPARK\b|\bPR-1FL|\bPRK\b/i.test(combined)) {
+    return { buildingCode: 'PRK', buildingLabel: FDU_BUILDING_DIRECTORY.PRK };
+  }
+  if (/RUTHERFORD|RUTHDORM|\bRUTH\b|\bRUT\b/i.test(combined)) {
+    return { buildingCode: 'RUT', buildingLabel: FDU_BUILDING_DIRECTORY.RUT };
+  }
+  if (/STADLER|ZENNER|\bZEN\b/i.test(combined)) {
+    return { buildingCode: 'ZEN', buildingLabel: FDU_BUILDING_DIRECTORY.ZEN };
+  }
+  if (/TWOMBLY|FLORENCE|HAMILTON|\bTWM\b|\bTWK\b/i.test(combined)) {
+    return { buildingCode: 'TWK', buildingLabel: FDU_BUILDING_DIRECTORY.TWK };
+  }
+  if (/SCIENCE|\bSCI\b/i.test(combined)) {
+    return { buildingCode: 'SCI', buildingLabel: FDU_BUILDING_DIRECTORY.SCI };
+  }
+  if (/WELLNESS|\bWEL\b/i.test(combined)) {
+    return { buildingCode: 'WEL', buildingLabel: FDU_BUILDING_DIRECTORY.WEL };
+  }
+  if (/\bCOT-EAST|\bCOT-WEST|\bCOT\b/i.test(combined)) {
+    return { buildingCode: 'COT', buildingLabel: FDU_BUILDING_DIRECTORY.COT };
+  }
+  if (/\bCHA-1FL|\bCHA\b/i.test(combined)) {
+    return { buildingCode: 'CHA', buildingLabel: FDU_BUILDING_DIRECTORY.CHA };
+  }
+  if (/FERGUSON|\bFER\b|\bREC\b/i.test(combined)) {
+    return { buildingCode: 'REC', buildingLabel: FDU_BUILDING_DIRECTORY.REC };
+  }
   if (/BANCROFT|\bBAN\b|\bMIS-MERAKI/i.test(combined)) {
     return { buildingCode: 'BAN', buildingLabel: FDU_BUILDING_DIRECTORY.BAN };
   }
@@ -365,7 +468,7 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
   if (/ROBISON|\bROB-|\bROB\b/i.test(combined)) {
     return { buildingCode: 'ROB', buildingLabel: FDU_BUILDING_DIRECTORY.ROB };
   }
-  if (/ROTHMAN|FIELDHOUSE|\bFH-MS350|\bROT\b|\bROTH\b/i.test(combined)) {
+  if (/ROTHMAN|ROTHMN|FIELDHOUSE|\bFH-MS350|\bROT\b|\bROTH\b/i.test(combined)) {
     return { buildingCode: 'ROT', buildingLabel: FDU_BUILDING_DIRECTORY.ROT };
   }
   if (/LIBRARY|GIOVATTO|\bLIB1_|\bLIB2|\bGIO\b/i.test(combined)) {

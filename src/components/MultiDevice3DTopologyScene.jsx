@@ -42,8 +42,8 @@ import {
 } from '../data/globalNetworkData';
 import { CiscoC9300ChassisAssembly } from './CiscoChassis3D';
 
-const LAYOUT_3D_STORAGE_KEY = 'fdu_multi_device_3d_layout_v1';
-const API_3D_LAYOUT_ENDPOINT = '/api/topology/layouts/multi_device_3d_v1';
+const LAYOUT_3D_STORAGE_KEY = 'fdu_multi_device_3d_layout_v2';
+const API_3D_LAYOUT_ENDPOINT = '/api/topology/layouts/multi_device_3d_v2';
 const FLOOR_PLANE = new THREE.Plane(new THREE.Vector3(0, 1, 0), -0.2);
 const MULTI_CHASSIS_SCALE = 0.225;
 const MULTI_CHASSIS_Y = 0.56;
@@ -156,18 +156,22 @@ function buildSwitchPortsFor3DNode(node, savedDevices = [], parsedSwitchData = n
  */
 const DEFAULT_3D_LAYOUT = {
   pads: {
-    coreZone: { cx: -6.8, cz: -5.2, w: 8.2, d: 5.2 },
-    switchZone: { cx: -6.4, cz: 3.4, w: 9.8, d: 8.6 },
-    apZone: { cx: 6.5, cz: -2.2, w: 9.6, d: 9.8 },
-    coloZone: { cx: 6.5, cz: 5.5, w: 9.6, d: 5.2 }
+    vancZone: { cx: -28.0, cz: -25.0, w: 14.0, d: 11.0 },
+    coloZone: { cx: 4.0, cz: -25.0, w: 14.5, d: 13.0 },
+    mcoreZone: { cx: -18.0, cz: -4.5, w: 12.5, d: 8.5 },
+    coreZone: { cx: 24.0, cz: -4.5, w: 12.5, d: 8.5 },
+    switchZone: { cx: 18.0, cz: 10.5, w: 10.2, d: 8.6 },
+    apZone: { cx: 31.5, cz: 10.5, w: 9.6, d: 9.8 }
   },
   devices: {
-    // Relative to coreZone (-6.8, -5.2)
-    coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 3.4, maxDz: 2.2 },
-    // Relative to switchZone (-6.4, 3.4)
+    // Relative to coreZone (T-CORE Metro)
+    coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 4.4, maxDz: 3.2 },
+    // Relative to mcoreZone (M-CORE Florham)
+    mcoreNode: { dx: 0, dz: 0, padId: 'mcoreZone', maxDx: 4.4, maxDz: 3.2 },
+    // Relative to switchZone (Bancroft Hall under T-CORE)
     wlNode: { dx: 2.2, dz: -2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
     wsNode: { dx: -2.2, dz: 2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
-    // 7 Wi-Fi 6 APs relative to apZone (6.5, -2.2)
+    // 7 Wi-Fi 6 APs relative to apZone
     'ap-0': { dx: -2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
     'ap-1': { dx: 2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
     'ap-2': { dx: -2.2, dz: -1.25, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
@@ -175,7 +179,7 @@ const DEFAULT_3D_LAYOUT = {
     'ap-4': { dx: -2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
     'ap-5': { dx: 2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
     'ap-6': { dx: -2.2, dz: 3.85, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    // 4 Colocation / Campus Sites relative to coloZone (6.5, 5.5)
+    // 4 Colocation / Campus Sites relative to coloZone
     'colo-Halsey165': { dx: -2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
     'colo-Hastings': { dx: 2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
     'colo-Florham': { dx: -2.2, dz: 1.4, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
@@ -203,7 +207,7 @@ function mergeWithDefault3DLayout(saved) {
   return merged;
 }
 
-// Distinct Architectural Rim & Slab Colors for FDU Campus Building 3D Bases
+// Distinct Architectural Rim & Slab Colors for FDU Campus Building 3D Bases (Metro & Florham)
 const BUILDING_BASE_THEME = {
   CORE: { baseColor: '#17162e', rimColor: '#fb923c' },
   BAN: { baseColor: '#091d34', rimColor: '#10b981' },
@@ -223,7 +227,21 @@ const BUILDING_BASE_THEME = {
   ALU: { baseColor: '#0e2038', rimColor: '#7dd3fc' },
   WRG: { baseColor: '#1c1917', rimColor: '#facc15' },
   PSO: { baseColor: '#251218', rimColor: '#f87171' },
-  TPL: { baseColor: '#0f1e2e', rimColor: '#38bdf8' }
+  TPL: { baseColor: '#0f1e2e', rimColor: '#38bdf8' },
+  // Florham / Madison Buildings
+  SOP: { baseColor: '#0a1f35', rimColor: '#38bdf8' },
+  VIL: { baseColor: '#0b2228', rimColor: '#2dd4bf' },
+  MON: { baseColor: '#171636', rimColor: '#818cf8' },
+  PRK: { baseColor: '#09241e', rimColor: '#34d399' },
+  HEN: { baseColor: '#26180c', rimColor: '#fbbf24' },
+  RUT: { baseColor: '#23122b', rimColor: '#e879f9' },
+  DRE: { baseColor: '#0c1d36', rimColor: '#60a5fa' },
+  TWK: { baseColor: '#26121c', rimColor: '#fb7185' },
+  ZEN: { baseColor: '#09222c', rimColor: '#22d3ee' },
+  SCI: { baseColor: '#0d241b', rimColor: '#4ade80' },
+  STU: { baseColor: '#241612', rimColor: '#fb923c' },
+  REC: { baseColor: '#1b1532', rimColor: '#a78bfa' },
+  BRN: { baseColor: '#221a0f', rimColor: '#facc15' }
 };
 
 function getBuildingBaseTheme(code) {
@@ -244,20 +262,20 @@ function clamp(val, min, max) {
  */
 function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
   const { camera } = useThree();
-  const targetPos = useRef(new THREE.Vector3(0, 22, 28));
-  const targetLookAt = useRef(new THREE.Vector3(0, 0, 0));
+  const targetPos = useRef(new THREE.Vector3(2, 46, 58));
+  const targetLookAt = useRef(new THREE.Vector3(2, 0, 4));
   const isTransitioning = useRef(false);
   const lastKey = useRef('');
 
   const presets = useMemo(
     () => ({
-      'blueprint-iso': { pos: [-16, 21, 25], target: [0, 0.5, 0] },
-      'campus-wide': { pos: [-26, 48, 60], target: [-18, 0.5, -2] },
-      'metro-fabric': { pos: [-9, 13, 18], target: [-6.5, 1.0, 0.5] },
-      'switch-trunks': { pos: [-6, 8.5, 13.5], target: [-6.5, 0.6, 3.2] },
-      'wifi-fleet': { pos: [9, 12, 16], target: [6.5, 0.8, -1.5] },
-      'top-blueprint': { pos: [-14, 65, 0.01], target: [-14, 0, 0] },
-      'front-elevation': { pos: [0, 7, 29], target: [0, 1, 0] }
+      'blueprint-iso': { pos: [2, 46, 58], target: [2, 0.5, 4] },
+      'campus-wide': { pos: [2, 66, 78], target: [2, 0.5, 10] },
+      'metro-fabric': { pos: [22, 24, 34], target: [22, 0.8, 4] },
+      'switch-trunks': { pos: [18, 12, 22], target: [18, 0.6, 10.5] },
+      'wifi-fleet': { pos: [34, 14, 24], target: [31.5, 0.8, 10.5] },
+      'top-blueprint': { pos: [2, 88, 4.01], target: [2, 0, 4] },
+      'front-elevation': { pos: [2, 16, 68], target: [2, 1, 4] }
     }),
     []
   );
@@ -323,11 +341,13 @@ function ZonePlatform3D({
   isDraggingThisPad = false,
   isParentOfDraggedDevice = false,
   onStartPadDrag,
-  onFocusPad
+  onFocusPad,
+  onClickTitle
 }) {
   const [hovered, setHovered] = useState(false);
   const [w, h, d] = size;
   const activeHighlight = isDraggingThisPad || isParentOfDraggedDevice;
+  const handlePlaqueClick = onClickTitle || onFocusPad;
 
   return (
     <group
@@ -407,13 +427,13 @@ function ZonePlatform3D({
         <Html position={[0, 0.18, d / 2 + 0.42]} center zIndexRange={[12, 0]}>
           <div
             onClick={(e) => {
-              if (onFocusPad) {
+              if (handlePlaqueClick) {
                 e.stopPropagation();
-                onFocusPad();
+                handlePlaqueClick();
               }
             }}
             className={`${
-              onFocusPad ? 'cursor-pointer hover:border-white ' : 'pointer-events-none '
+              handlePlaqueClick ? 'cursor-pointer hover:border-white ' : 'pointer-events-none '
             }select-none whitespace-nowrap px-2.5 py-0.5 rounded-md bg-slate-950/92 border border-slate-700/90 shadow-lg transition`}
           >
             <div
@@ -978,37 +998,40 @@ function WirelessApNode3D({
 }
 
 /**
- * 3D Colocation / Regional Campus Node (Draggable within/near its Square Base)
+ * 3D Optical / Firewall / Router / ISP Cloud Appliance Node
+ * Renders FDU-CAMPUSES.drawio infrastructure:
+ * - 'adva': Adva FSP 3000 DWDM Optical Transport Shelf (VLAN 120 / VLAN 123)
+ * - 'firewall': FortiGate HA Firewall (FG-1/2, M-FG-1/2, T-FG-1/2, V-FG1/2, Fort D-1/2)
+ * - 'router': NCS-5504, NCS, ASA ASR
+ * - 'isp': US / Canadian ISP Cloud
  */
-function ColocationHub3D({
-  deviceId,
-  site,
+function InfraApplianceNode3D({
+  node,
   position,
   isSelected,
-  isDragging,
   onSelect,
-  onStartDeviceDrag,
   labelMode
 }) {
   const [hovered, setHovered] = useState(false);
-  const color = site.country === 'CA' ? '#f43f5e' : '#a855f7';
+  const color = node.color || '#a855f7';
+  const kind = node.kind || 'appliance';
 
   const visible =
-    hovered || isSelected || isDragging || labelMode === 'compact' || labelMode === 'all';
-  const showFullDetails = hovered || isSelected || isDragging || labelMode === 'all';
+    hovered ||
+    isSelected ||
+    labelMode === 'switches' ||
+    labelMode === 'compact' ||
+    labelMode === 'all' ||
+    kind === 'adva' ||
+    kind === 'firewall';
+  const showFullDetails = hovered || isSelected || labelMode === 'all';
 
   return (
     <group
       position={position}
-      onPointerDown={(e) => {
-        if (onStartDeviceDrag && deviceId) {
-          onStartDeviceDrag(e, deviceId, () =>
-            onSelect({ type: 'site', data: site, id: site.code, pos: position })
-          );
-        } else {
-          e.stopPropagation();
-          onSelect({ type: 'site', data: site, id: site.code, pos: position });
-        }
+      onClick={(e) => {
+        e.stopPropagation();
+        onSelect({ type: 'device', data: node, id: node.id, pos: position });
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -1016,43 +1039,82 @@ function ColocationHub3D({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {(isSelected || hovered || isDragging) && (
+      {(isSelected || hovered) && (
         <mesh position={[0, 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[1.35, 1.55, 24]} />
-          <meshBasicMaterial color={isDragging ? '#ffffff' : color} />
+          <ringGeometry args={[1.3, 1.55, 28]} />
+          <meshBasicMaterial color={isSelected ? '#ffffff' : color} />
         </mesh>
       )}
 
-      <RoundedBox args={[2.3, 1.25, 1.7]} radius={0.1} smoothness={3} position={[0, 0.65, 0]} castShadow>
-        <meshStandardMaterial
-          color={isDragging ? '#7e22ce' : isSelected ? '#581c87' : hovered ? '#3b0764' : '#1e1b4b'}
-          metalness={0.55}
-          roughness={0.35}
-        />
-      </RoundedBox>
-      <mesh position={[0, 1.29, 0]}>
-        <boxGeometry args={[1.9, 0.03, 1.3]} />
-        <meshBasicMaterial color={color} />
-      </mesh>
+      {kind === 'adva' ? (
+        /* Adva FSP 3000 Optical DWDM Transport Shelf */
+        <group position={[0, 0.55, 0]}>
+          <RoundedBox args={[2.35, 0.85, 1.55]} radius={0.08} smoothness={3} castShadow>
+            <meshStandardMaterial color="#0f172a" metalness={0.65} roughness={0.28} />
+          </RoundedBox>
+          {/* Optical Transponder Linecards */}
+          {[-0.75, -0.25, 0.25, 0.75].map((lx, idx) => (
+            <mesh key={idx} position={[lx, 0, 0.78]}>
+              <boxGeometry args={[0.38, 0.62, 0.04]} />
+              <meshBasicMaterial color={idx % 2 === 0 ? '#facc15' : '#38bdf8'} />
+            </mesh>
+          ))}
+          <mesh position={[0, 0.44, 0]}>
+            <boxGeometry args={[2.05, 0.03, 1.25]} />
+            <meshBasicMaterial color="#facc15" />
+          </mesh>
+        </group>
+      ) : kind === 'firewall' ? (
+        /* FortiGate Next-Gen HA Firewall Appliance */
+        <group position={[0, 0.48, 0]}>
+          <RoundedBox args={[2.25, 0.68, 1.65]} radius={0.07} smoothness={3} castShadow>
+            <meshStandardMaterial color="#27121b" metalness={0.6} roughness={0.32} />
+          </RoundedBox>
+          <mesh position={[0, 0, 0.83]}>
+            <boxGeometry args={[1.95, 0.36, 0.04]} />
+            <meshBasicMaterial color={color} />
+          </mesh>
+          <mesh position={[0, 0.35, 0]}>
+            <boxGeometry args={[1.95, 0.03, 1.3]} />
+            <meshBasicMaterial color={color} />
+          </mesh>
+        </group>
+      ) : (
+        /* NCS-5504 / ASA ASR / ISP Node */
+        <group position={[0, 0.58, 0]}>
+          <RoundedBox args={[2.35, 0.95, 1.68]} radius={0.1} smoothness={3} castShadow>
+            <meshStandardMaterial color="#172036" metalness={0.6} roughness={0.32} />
+          </RoundedBox>
+          <mesh position={[0, 0.49, 0]}>
+            <boxGeometry args={[2.0, 0.03, 1.35]} />
+            <meshBasicMaterial color={color} />
+          </mesh>
+        </group>
+      )}
 
       {visible && (
-        <Html position={[0, 1.65, 0]} center zIndexRange={[20, 0]}>
+        <Html position={[0, 1.45, 0]} center zIndexRange={[22, 0]}>
           <div
             onClick={(e) => {
               e.stopPropagation();
-              onSelect({ type: 'site', data: site, id: site.code, pos: position });
+              onSelect({ type: 'device', data: node, id: node.id, pos: position });
             }}
             className={`cursor-pointer select-none whitespace-nowrap px-2 py-0.5 rounded-md border shadow-lg transition ${
-              isSelected || isDragging
-                ? 'bg-purple-950 border-white text-white'
-                : 'bg-slate-950/90 border-purple-500/50 text-slate-100 hover:border-purple-300'
+              isSelected
+                ? 'bg-slate-900 border-white text-white ring-1 ring-sky-400'
+                : 'bg-slate-950/92 border-slate-700/90 text-slate-100 hover:border-white'
             }`}
           >
-            <div className="text-[9.5px] font-mono font-bold text-purple-300">
-              {site.flag} {site.code} • {site.type === 'colocation' ? 'Colo Hub' : 'Campus'}
+            <div className="flex items-center gap-1 text-[9.5px] font-mono font-bold" style={{ color }}>
+              <span>{node.hostname}</span>
+              <span className="px-1 py-0.2 rounded bg-slate-900 text-[7.5px] text-slate-200 border border-slate-700">
+                {node.badge || node.role}
+              </span>
             </div>
             {showFullDetails && (
-              <div className="text-[8.5px] font-mono text-slate-300">{site.location}</div>
+              <div className="text-[8.5px] font-mono text-slate-300">
+                {node.model} • <span className="text-emerald-300">{node.mgmtIp}</span>
+              </div>
             )}
           </div>
         </Html>
@@ -1325,8 +1387,8 @@ export default function MultiDevice3DTopologyScene({
     (node) => {
       if (!node) return false;
       if (hiddenSet.has(node.key) || hiddenSet.has(node.id)) return false;
-      // Keep primary tcore-9600 core anchor visible unless explicitly hidden
-      if (/^tcore-9600/i.test(node.hostname || '')) {
+      // Keep primary tcore-9600, mcore-9600, and hcore core anchors visible unless explicitly hidden
+      if (/^(tcore-9600|mcore-9600|hcore)/i.test(node.hostname || '')) {
         return true;
       }
       if (selectedBuildingFilter && selectedBuildingFilter !== 'ALL') {
@@ -1347,15 +1409,14 @@ export default function MultiDevice3DTopologyScene({
     [hiddenSet, selectedBuildingFilter, showUnpolledCdpNeighbors]
   );
 
-  // Identify live nodes
+  // Identify live nodes: T-CORE (Metro), M-CORE (Florham), H-CORE (US Colocation)
   const rawCoreNode = useMemo(() => {
     return (
-      globalGraph.switchNodes.find((n) => /^tcore-9600/i.test(n.hostname || '')) ||
-      globalGraph.switchNodes.find((n) => n.hierarchyTier === 1) || {
+      globalGraph.switchNodes.find((n) => /^tcore-9600/i.test(n.hostname || '')) || {
         id: 'TCORE-9600',
         key: 'TCORE-9600',
         hostname: 'tcore-9600.net.fdu.edu',
-        mgmtIp: '132.238.94.2',
+        mgmtIp: '132.238.1.40',
         model: 'Cisco C9606R',
         iosVersion: '17.12.4',
         role: 'Campus Core Switch',
@@ -1372,6 +1433,54 @@ export default function MultiDevice3DTopologyScene({
   const coreNode = useMemo(() => {
     return isSwitchVisibleIn3D(rawCoreNode) ? rawCoreNode : null;
   }, [rawCoreNode, isSwitchVisibleIn3D]);
+
+  const rawMcoreNode = useMemo(() => {
+    return (
+      globalGraph.switchNodes.find((n) => /^mcore-9600/i.test(n.hostname || '')) || {
+        id: 'MCORE-9600',
+        key: 'MCORE-9600',
+        hostname: 'mcore-9600.net.fdu.edu',
+        mgmtIp: '132.238.129.40',
+        model: 'Cisco C9606R',
+        iosVersion: '17.12.4',
+        role: 'Campus Core Switch',
+        siteCode: 'Florham',
+        buildingCode: 'CORE',
+        isPolled: false,
+        hierarchyTier: 1,
+        switchLinks: [],
+        attachedEndpoints: []
+      }
+    );
+  }, [globalGraph]);
+
+  const mcoreNode = useMemo(() => {
+    return isSwitchVisibleIn3D(rawMcoreNode) ? rawMcoreNode : null;
+  }, [rawMcoreNode, isSwitchVisibleIn3D]);
+
+  const rawHcoreNode = useMemo(() => {
+    return (
+      globalGraph.switchNodes.find((n) => /^hcore/i.test(n.hostname || '')) || {
+        id: 'HCORE-7706',
+        key: 'HCORE-7706',
+        hostname: 'hcore(FXS1836Q2KE)',
+        mgmtIp: '132.238.10.29',
+        model: 'N77-C7706',
+        iosVersion: 'NX-OS 8.4',
+        role: 'US Colocation Core',
+        siteCode: 'Halsey165',
+        buildingCode: 'CORE',
+        isPolled: false,
+        hierarchyTier: 1,
+        switchLinks: [],
+        attachedEndpoints: []
+      }
+    );
+  }, [globalGraph]);
+
+  const hcoreNode = useMemo(() => {
+    return isSwitchVisibleIn3D(rawHcoreNode) ? rawHcoreNode : null;
+  }, [rawHcoreNode, isSwitchVisibleIn3D]);
 
   const rawWlNode = useMemo(() => {
     return (
@@ -1392,14 +1501,22 @@ export default function MultiDevice3DTopologyScene({
     return isSwitchVisibleIn3D(rawWorkStudyNode) ? rawWorkStudyNode : null;
   }, [rawWorkStudyNode, isSwitchVisibleIn3D]);
 
-  // Any additional switches discovered beyond the initial 3 (filtered by Building & Polled/CDP Scope, sorted by Building!)
+  // Any additional switches discovered beyond the Core Trio & Bancroft 2FL pair (filtered by Building & Polled/CDP Scope, sorted by Building!)
   const additionalSwitches = useMemo(() => {
     const coreId = rawCoreNode?.id;
+    const mcoreId = rawMcoreNode?.id;
+    const hcoreId = rawHcoreNode?.id;
     const wlId = rawWlNode?.id;
     const wsId = rawWorkStudyNode?.id;
     return globalGraph.switchNodes
       .filter(
-        (n) => n.id !== coreId && n.id !== wlId && n.id !== wsId && isSwitchVisibleIn3D(n)
+        (n) =>
+          n.id !== coreId &&
+          n.id !== mcoreId &&
+          n.id !== hcoreId &&
+          n.id !== wlId &&
+          n.id !== wsId &&
+          isSwitchVisibleIn3D(n)
       )
       .sort((a, b) => {
         if (a.buildingCode !== b.buildingCode) {
@@ -1407,7 +1524,15 @@ export default function MultiDevice3DTopologyScene({
         }
         return (a.hostname || '').localeCompare(b.hostname || '');
       });
-  }, [globalGraph.switchNodes, rawCoreNode, rawWlNode, rawWorkStudyNode, isSwitchVisibleIn3D]);
+  }, [
+    globalGraph.switchNodes,
+    rawCoreNode,
+    rawMcoreNode,
+    rawHcoreNode,
+    rawWlNode,
+    rawWorkStudyNode,
+    isSwitchVisibleIn3D
+  ]);
 
   // Group all switches by building code (ready for tcore / mcore 300+ CDP neighbors)
   const buildingClusters = useMemo(() => {
@@ -1435,7 +1560,12 @@ export default function MultiDevice3DTopologyScene({
     return wlNode.attachedEndpoints || [];
   }, [wlNode]);
 
-  // Compute live 3D Coordinates for Every Device on its Corresponding Campus Building Base!
+  // Compute live 3D Coordinates matching the FDU-CAMPUSES.drawio Spatial Layout:
+  // - Top-Left: V-CORE (Vancouver Canada) + V-FG1/2 + ASA ASR + 2x NCS + 2x CA ISP
+  // - Top-Right: H-CORE (165 Halsey US Colo) + FG-1/2 + NCS-5504 + Fort D-1/2 + 2x US ISP
+  // - Middle-Left: M-CORE (mcore-9600 Florham) + M-FG-1/2 + DC2 Core Peers + Florham Building Bases below
+  // - Middle-Right: T-CORE (tcore-9600 Metro) + T-FG-1/2 + DC1 Core Peers + Bancroft & Metro Building Bases below
+  // - US Core Triangle Optical Legs: 3x Adva FSP 3000 DWDM Shelves (H-CORE<->M-CORE, H-CORE<->T-CORE, M-CORE<->T-CORE)
   const positions = useMemo(() => {
     const getPos = (deviceId) => {
       const dev = layout3D.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
@@ -1444,8 +1574,18 @@ export default function MultiDevice3DTopologyScene({
     };
 
     const corePos = getPos('coreNode');
+    const mcorePos = getPos('mcoreNode');
     const wlPos = getPos('wlNode');
     const wsPos = getPos('wsNode');
+
+    const vancPadCfg = layout3D.pads.vancZone || DEFAULT_3D_LAYOUT.pads.vancZone;
+    const coloPadCfg = layout3D.pads.coloZone || DEFAULT_3D_LAYOUT.pads.coloZone;
+    const mcorePadCfg = layout3D.pads.mcoreZone || DEFAULT_3D_LAYOUT.pads.mcoreZone;
+    const corePadCfg = layout3D.pads.coreZone || DEFAULT_3D_LAYOUT.pads.coreZone;
+    const banPadCfg = layout3D.pads.switchZone || DEFAULT_3D_LAYOUT.pads.switchZone;
+
+    const hcorePos = [coloPadCfg.cx, 0.2, +(coloPadCfg.cz + 3.2).toFixed(2)];
+    const vcorePos = [vancPadCfg.cx, 0.2, +(vancPadCfg.cz + 2.8).toFixed(2)];
 
     // 7 Wi-Fi 6 APs arranged on the Right Access Zone Pad
     const apPositions = attachedAps.slice(0, 7).map((ap, idx) => {
@@ -1457,68 +1597,64 @@ export default function MultiDevice3DTopologyScene({
       };
     });
 
-    // Colocation & WAN Sites on the Purple Colocation Pad
-    const coloSites = GLOBAL_SITES.filter((s) =>
-      ['Halsey165', 'Hastings', 'Florham', 'VancOakridge'].includes(s.code)
-    ).map((site) => {
-      const deviceId = `colo-${site.code}`;
-      return {
-        deviceId,
-        site,
-        pos: getPos(deviceId)
-      };
-    });
-
     // 1. Separate additionalSwitches into:
-    //    - corePeerSwitches (buildingCode === 'CORE' -> placed onto the Campus Core & Data Center Base!)
-    //    - banExtraSwitches (buildingCode === 'BAN'  -> placed onto the Bancroft Hall Base!)
-    //    - otherBuildingSwitches (DIC, ROB, BEC, UCH, LCH, ROT, GIO, SUB, KRN, NPT, WIL, MUS, UNI, etc.)
-    const corePeerSwitches = [];
+    //    - florhamCorePeers (buildingCode === 'CORE' && siteCode === 'Florham' -> placed onto mcoreZone)
+    //    - metroCorePeers   (buildingCode === 'CORE' && siteCode !== 'Florham' -> placed onto coreZone)
+    //    - banExtraSwitches (buildingCode === 'BAN' -> placed onto Bancroft Hall switchZone)
+    //    - florhamBuildingMap (siteCode === 'Florham' -> placed in 3-column grid south of mcoreZone)
+    //    - metroBuildingMap   (siteCode !== 'Florham' -> placed in 3-column grid south of coreZone/switchZone)
+    const florhamCorePeers = [];
+    const metroCorePeers = [];
     const banExtraSwitches = [];
-    const otherBuildingMap = new Map();
+    const florhamBuildingMap = new Map();
+    const metroBuildingMap = new Map();
 
     for (const sw of additionalSwitches) {
       const bCode = sw.buildingCode || 'OTHER';
+      const isFlorham = sw.siteCode === 'Florham';
       if (bCode === 'CORE') {
-        corePeerSwitches.push(sw);
+        if (isFlorham) {
+          florhamCorePeers.push(sw);
+        } else {
+          metroCorePeers.push(sw);
+        }
       } else if (bCode === 'BAN') {
         banExtraSwitches.push(sw);
       } else {
-        if (!otherBuildingMap.has(bCode)) {
-          otherBuildingMap.set(bCode, {
+        const targetMap = isFlorham ? florhamBuildingMap : metroBuildingMap;
+        const groupKey = `${isFlorham ? 'FLO' : 'MET'}-${bCode}`;
+        if (!targetMap.has(groupKey)) {
+          targetMap.set(groupKey, {
             code: bCode,
+            siteCode: isFlorham ? 'Florham' : 'Metro',
             label: sw.buildingLabel || bCode,
             switches: []
           });
         }
-        otherBuildingMap.get(bCode).switches.push(sw);
+        targetMap.get(groupKey).switches.push(sw);
       }
     }
 
-    // 2. Place Core Peer Switches (mcore-9600, hcore, DC1-9500, DC1-9300-NET, WLCs, etc.) on the CORE Base
-    const corePadCfg = layout3D.pads.coreZone || DEFAULT_3D_LAYOUT.pads.coreZone;
-    const coreCols = 2;
-    const coreRows = Math.ceil(corePeerSwitches.length / coreCols);
-    const coreColSpacing = 4.1;
+    // 2a. Place Metro Core Peers (DC1-9500, DC1-9300-NET, Metro-WLC-1/2, etc.) on T-CORE Base (coreZone)
+    const coreCols = 3;
+    const coreRows = Math.ceil(metroCorePeers.length / coreCols);
+    const coreColSpacing = 4.05;
     const coreRowSpacing = 2.85;
-    const expandedCoreW =
-      corePeerSwitches.length > 0
-        ? Math.max(corePadCfg.w, +(coreCols * coreColSpacing + 3.4).toFixed(2))
-        : corePadCfg.w;
+    const expandedCoreW = Math.max(corePadCfg.w, +(coreCols * coreColSpacing + 3.6).toFixed(2));
     const expandedCoreD =
-      corePeerSwitches.length > 0
-        ? Math.max(corePadCfg.d, +((coreRows + 1) * coreRowSpacing + 3.8).toFixed(2))
+      metroCorePeers.length > 0
+        ? Math.max(corePadCfg.d, +((coreRows + 1) * coreRowSpacing + 4.2).toFixed(2))
         : corePadCfg.d;
     const expandedCoreCz =
-      corePeerSwitches.length > 0
+      metroCorePeers.length > 0
         ? +(corePadCfg.cz - (expandedCoreD - corePadCfg.d) / 2).toFixed(2)
         : corePadCfg.cz;
 
-    const corePeerPositions = corePeerSwitches.map((sw, idx) => {
+    const corePeerPositions = metroCorePeers.map((sw, idx) => {
       const col = idx % coreCols;
       const row = Math.floor(idx / coreCols);
       const startX = corePadCfg.cx - ((coreCols - 1) * coreColSpacing) / 2;
-      const startZ = corePadCfg.cz - 3.6 - row * coreRowSpacing;
+      const startZ = corePadCfg.cz - 3.4 - row * coreRowSpacing;
       return {
         sw,
         pos: [+(startX + col * coreColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
@@ -1532,8 +1668,38 @@ export default function MultiDevice3DTopologyScene({
       d: expandedCoreD
     };
 
-    // 3. Place additional Bancroft Hall switches (T-BAN-3FL-WL, T-BAN-DC-WL, bancroft2fl-meraki, mis-meraki) on the Bancroft Base!
-    const banPadCfg = layout3D.pads.switchZone || DEFAULT_3D_LAYOUT.pads.switchZone;
+    // 2b. Place Florham Core Peers (DC2-9500, Flo-WLC-1/2, F-WLC-1/2, datacenter-ise, etc.) on M-CORE Base (mcoreZone)
+    const mcoreCols = 3;
+    const mcoreRows = Math.ceil(florhamCorePeers.length / mcoreCols);
+    const expandedMcoreW = Math.max(mcorePadCfg.w, +(mcoreCols * coreColSpacing + 3.6).toFixed(2));
+    const expandedMcoreD =
+      florhamCorePeers.length > 0
+        ? Math.max(mcorePadCfg.d, +((mcoreRows + 1) * coreRowSpacing + 4.2).toFixed(2))
+        : mcorePadCfg.d;
+    const expandedMcoreCz =
+      florhamCorePeers.length > 0
+        ? +(mcorePadCfg.cz - (expandedMcoreD - mcorePadCfg.d) / 2).toFixed(2)
+        : mcorePadCfg.cz;
+
+    const mcorePeerPositions = florhamCorePeers.map((sw, idx) => {
+      const col = idx % mcoreCols;
+      const row = Math.floor(idx / mcoreCols);
+      const startX = mcorePadCfg.cx - ((mcoreCols - 1) * coreColSpacing) / 2;
+      const startZ = mcorePadCfg.cz - 3.4 - row * coreRowSpacing;
+      return {
+        sw,
+        pos: [+(startX + col * coreColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+      };
+    });
+
+    const mcoreZoneBox = {
+      cx: mcorePadCfg.cx,
+      cz: expandedMcoreCz,
+      w: expandedMcoreW,
+      d: expandedMcoreD
+    };
+
+    // 3. Place additional Bancroft Hall switches on the Bancroft Base (switchZone)
     const banCols = 2;
     const banRows = Math.ceil(banExtraSwitches.length / banCols);
     const banColSpacing = 4.1;
@@ -1566,120 +1732,384 @@ export default function MultiDevice3DTopologyScene({
       d: expandedBanD
     };
 
-    // 4. Create an Individual 3D Campus Building Base ("Island") for Each Campus Building!
-    const sortedBuildingGroups = Array.from(otherBuildingMap.values()).sort(
-      (a, b) => b.switches.length - a.switches.length
-    );
+    // Helper to size and arrange a campus's Building Bases into a clean 3-column grid south of its Campus Core!
+    const layoutCampusBuildingGrid = (buildingGroups, anchorCenterX, startTopZ, campusTag) => {
+      const sorted = Array.from(buildingGroups.values()).sort(
+        (a, b) => b.switches.length - a.switches.length
+      );
+      const sized = sorted.map((grp) => {
+        const cnt = grp.switches.length;
+        const cols = cnt <= 2 ? cnt : cnt <= 6 ? 2 : cnt <= 12 ? 3 : cnt <= 20 ? 4 : 6;
+        const rows = Math.max(1, Math.ceil(cnt / cols));
+        const colSpacing = 4.1;
+        const rowSpacing = 2.9;
+        const w = Math.max(6.4, +(cols * colSpacing + 2.3).toFixed(2));
+        const d = Math.max(4.4, +(rows * rowSpacing + 2.3).toFixed(2));
+        return { ...grp, cols, rows, colSpacing, rowSpacing, w, d };
+      });
 
-    // Precompute each building base's size (w, d) from its switch count
-    const sizedGroups = sortedBuildingGroups.map((grp) => {
-      const cnt = grp.switches.length;
-      const cols = cnt <= 2 ? cnt : cnt <= 6 ? 2 : cnt <= 12 ? 3 : cnt <= 20 ? 4 : 6;
-      const rows = Math.max(1, Math.ceil(cnt / cols));
-      const colSpacing = 4.15;
-      const rowSpacing = 2.95;
-      const w = Math.max(6.4, +(cols * colSpacing + 2.4).toFixed(2));
-      const d = Math.max(4.4, +(rows * rowSpacing + 2.4).toFixed(2));
-      return {
-        ...grp,
-        cols,
-        rows,
-        colSpacing,
-        rowSpacing,
-        w,
-        d
-      };
-    });
+      const gridCols = 3;
+      const colBuckets = [[], [], []];
+      const colDepths = [0, 0, 0];
 
-    // Arrange Building Bases into 3 non-overlapping horizontal Campus Avenues to the West of Core & Bancroft
-    const isSingleFilteredBuilding = sizedGroups.length === 1;
-    const avenueCount = 3;
-    const avenueBuckets = [[], [], []];
-    const avenueWidths = [0, 0, 0];
-
-    sizedGroups.forEach((grp) => {
-      // Pick the avenue with the smallest accumulated width so avenues stay balanced in length
-      let bestAvenue = 0;
-      for (let a = 1; a < avenueCount; a += 1) {
-        if (avenueWidths[a] < avenueWidths[bestAvenue]) {
-          bestAvenue = a;
+      sized.forEach((grp) => {
+        let bestCol = 0;
+        for (let c = 1; c < gridCols; c += 1) {
+          if (colDepths[c] < colDepths[bestCol]) bestCol = c;
         }
-      }
-      avenueBuckets[bestAvenue].push(grp);
-      avenueWidths[bestAvenue] += grp.w + 3.4;
-    });
+        colBuckets[bestCol].push(grp);
+        colDepths[bestCol] += grp.d + 3.2;
+      });
 
-    // Compute safe Z center for each of the 3 avenues based on maximum building depth in that avenue
-    const maxDepth0 = Math.max(8, ...avenueBuckets[0].map((g) => g.d));
-    const maxDepth1 = Math.max(8, ...avenueBuckets[1].map((g) => g.d));
-    const maxDepth2 = Math.max(8, ...avenueBuckets[2].map((g) => g.d));
-    const avenueCentersZ = [
-      0, // Center Avenue (Avenue 0)
-      -(maxDepth0 / 2 + maxDepth1 / 2 + 4.2), // North Avenue (Avenue 1)
-      +(maxDepth0 / 2 + maxDepth2 / 2 + 4.2) // South Avenue (Avenue 2)
-    ];
+      const maxW0 = Math.max(10, ...colBuckets[0].map((g) => g.w));
+      const maxW1 = Math.max(10, ...colBuckets[1].map((g) => g.w));
+      const maxW2 = Math.max(10, ...colBuckets[2].map((g) => g.w));
 
-    const buildingBases = [];
-    const allAdditionalSwitchPositions = [...corePeerPositions, ...banExtraPositions];
+      const colCentersX = [
+        +(anchorCenterX - (maxW1 / 2 + maxW0 / 2 + 3.2)).toFixed(2),
+        +anchorCenterX.toFixed(2),
+        +(anchorCenterX + (maxW1 / 2 + maxW2 / 2 + 3.2)).toFixed(2)
+      ];
 
-    avenueBuckets.forEach((bucket, avenueIdx) => {
-      let cursorRightEdgeX = -12.5;
-      const defaultCz = isSingleFilteredBuilding ? 0 : +avenueCentersZ[avenueIdx].toFixed(2);
+      const bases = [];
+      const switchItems = [];
 
-      bucket.forEach((grp) => {
-        const padId = `bldg-${grp.code}`;
-        const defaultCx = isSingleFilteredBuilding
-          ? +(-11.8 - grp.w / 2).toFixed(2)
-          : +(cursorRightEdgeX - grp.w / 2).toFixed(2);
-        cursorRightEdgeX -= grp.w + 3.4;
+      colBuckets.forEach((bucket, colIdx) => {
+        let cursorTopZ = startTopZ;
+        const defaultCx = colCentersX[colIdx];
 
-        const savedPad = layout3D.pads[padId];
-        const cx = typeof savedPad?.cx === 'number' ? savedPad.cx : defaultCx;
-        const cz = typeof savedPad?.cz === 'number' ? savedPad.cz : defaultCz;
-        const theme = getBuildingBaseTheme(grp.code);
+        bucket.forEach((grp) => {
+          const padId = `bldg-${campusTag}-${grp.code}`;
+          const defaultCz = +(cursorTopZ + grp.d / 2).toFixed(2);
+          cursorTopZ += grp.d + 3.2;
 
-        const startLocalX = -((grp.cols - 1) * grp.colSpacing) / 2;
-        const startLocalZ = -((grp.rows - 1) * grp.rowSpacing) / 2;
+          const savedPad = layout3D.pads[padId];
+          const cx = typeof savedPad?.cx === 'number' ? savedPad.cx : defaultCx;
+          const cz = typeof savedPad?.cz === 'number' ? savedPad.cz : defaultCz;
+          const theme = getBuildingBaseTheme(grp.code);
 
-        const switchPositions = grp.switches.map((sw, idx) => {
-          const col = idx % grp.cols;
-          const row = Math.floor(idx / grp.cols);
-          const pos = [
-            +(cx + startLocalX + col * grp.colSpacing).toFixed(2),
-            0.2,
-            +(cz + startLocalZ + row * grp.rowSpacing).toFixed(2)
-          ];
-          const item = { sw, pos, buildingCode: grp.code };
-          allAdditionalSwitchPositions.push(item);
-          return item;
-        });
+          const startLocalX = -((grp.cols - 1) * grp.colSpacing) / 2;
+          const startLocalZ = -((grp.rows - 1) * grp.rowSpacing) / 2;
 
-        buildingBases.push({
-          padId,
-          code: grp.code,
-          label: grp.label,
-          cx,
-          cz,
-          w: grp.w,
-          d: grp.d,
-          theme,
-          switches: grp.switches,
-          switchPositions
+          const switchPositions = grp.switches.map((sw, idx) => {
+            const col = idx % grp.cols;
+            const row = Math.floor(idx / grp.cols);
+            const pos = [
+              +(cx + startLocalX + col * grp.colSpacing).toFixed(2),
+              0.2,
+              +(cz + startLocalZ + row * grp.rowSpacing).toFixed(2)
+            ];
+            const item = { sw, pos, buildingCode: grp.code, siteCode: grp.siteCode };
+            switchItems.push(item);
+            return item;
+          });
+
+          bases.push({
+            padId,
+            code: grp.code,
+            siteCode: grp.siteCode,
+            label: grp.label,
+            cx,
+            cz,
+            w: grp.w,
+            d: grp.d,
+            theme,
+            switches: grp.switches,
+            switchPositions
+          });
         });
       });
-    });
+
+      return { bases, switchItems };
+    };
+
+    // 4a. Florham Campus Building Bases (South-West, directly below M-CORE)
+    const florhamGrid = layoutCampusBuildingGrid(
+      florhamBuildingMap,
+      mcorePadCfg.cx - 6.0,
+      mcorePadCfg.cz + 8.5,
+      'FLO'
+    );
+
+    // 4b. Metropolitan Campus Building Bases (South-East, directly below T-CORE & Bancroft Hall)
+    const metroGrid = layoutCampusBuildingGrid(
+      metroBuildingMap,
+      corePadCfg.cx + 2.0,
+      Math.max(expandedBanCz + expandedBanD / 2 + 4.2, corePadCfg.cz + 22.0),
+      'MET'
+    );
+
+    const buildingBases = [...florhamGrid.bases, ...metroGrid.bases];
+    const allAdditionalSwitchPositions = [
+      ...corePeerPositions,
+      ...mcorePeerPositions,
+      ...banExtraPositions,
+      ...florhamGrid.switchItems,
+      ...metroGrid.switchItems
+    ];
+
+    // 5. FDU-CAMPUSES.drawio Optical (Adva DWDM), Firewall (FortiGate HA), and WAN Edge Nodes
+    const advaHmPos = [
+      +((hcorePos[0] + mcorePos[0]) / 2).toFixed(2),
+      0.2,
+      +((hcorePos[2] + mcorePos[2]) / 2).toFixed(2)
+    ];
+    const advaHtPos = [
+      +((hcorePos[0] + corePos[0]) / 2).toFixed(2),
+      0.2,
+      +((hcorePos[2] + corePos[2]) / 2).toFixed(2)
+    ];
+    const advaMtPos = [
+      +((mcorePos[0] + corePos[0]) / 2).toFixed(2),
+      0.2,
+      +((mcorePos[2] + corePos[2]) / 2 + 1.2).toFixed(2)
+    ];
+
+    const infraNodes = [
+      // 3x Adva FSP 3000 Optical DWDM Transport Shelves on the US Core Triangle Legs (VLAN 120 / VLAN 123)
+      {
+        id: 'ADVA-HM-DWDM',
+        hostname: 'Adva-DWDM-HM',
+        model: 'Adva FSP 3000 Optical',
+        mgmtIp: 'VLAN 120 (Po120)',
+        role: 'Optical DWDM',
+        badge: 'OPTICAL',
+        siteCode: 'Halsey165',
+        kind: 'adva',
+        color: '#facc15',
+        pos: advaHmPos
+      },
+      {
+        id: 'ADVA-HT-DWDM',
+        hostname: 'Adva-DWDM-HT',
+        model: 'Adva FSP 3000 Optical',
+        mgmtIp: 'VLAN 120 (Po126)',
+        role: 'Optical DWDM',
+        badge: 'OPTICAL',
+        siteCode: 'Halsey165',
+        kind: 'adva',
+        color: '#facc15',
+        pos: advaHtPos
+      },
+      {
+        id: 'ADVA-MT-DWDM',
+        hostname: 'Adva-DWDM-MT',
+        model: 'Adva FSP 3000 Optical',
+        mgmtIp: 'VLAN 120/123 (Po124)',
+        role: 'Optical DWDM',
+        badge: 'OPTICAL',
+        siteCode: 'Metro',
+        kind: 'adva',
+        color: '#facc15',
+        pos: advaMtPos
+      },
+      // Florham M-CORE FortiGate HA Pair (Po122 / Po123 / Vlan445 / Vlan446)
+      {
+        id: 'M-FG-1',
+        hostname: 'M-FG-1',
+        model: 'FortiGate 100G HA',
+        mgmtIp: 'Po122 • VLAN 445',
+        role: 'Florham Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Florham',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(mcorePos[0] - 3.8).toFixed(2), 0.2, +(mcorePos[2] + 2.2).toFixed(2)]
+      },
+      {
+        id: 'M-FG-2',
+        hostname: 'M-FG-2',
+        model: 'FortiGate 100G HA',
+        mgmtIp: 'Po123 • VLAN 446',
+        role: 'Florham Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Florham',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(mcorePos[0] + 3.8).toFixed(2), 0.2, +(mcorePos[2] + 2.2).toFixed(2)]
+      },
+      // Metro T-CORE FortiGate HA Pair (Po38 / Po117 / Vlan448 / Vlan449)
+      {
+        id: 'T-FG-1',
+        hostname: 'T-FG-1',
+        model: 'FortiGate 100G HA',
+        mgmtIp: 'Po38 • VLAN 448',
+        role: 'Metro Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Metro',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(corePos[0] - 3.8).toFixed(2), 0.2, +(corePos[2] + 2.2).toFixed(2)]
+      },
+      {
+        id: 'T-FG-2',
+        hostname: 'T-FG-2',
+        model: 'FortiGate 100G HA',
+        mgmtIp: 'Po117 • VLAN 449',
+        role: 'Metro Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Metro',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(corePos[0] + 3.8).toFixed(2), 0.2, +(corePos[2] + 2.2).toFixed(2)]
+      },
+      // US Colocation (165 Halsey) Tier: FG-1/2, NCS-5504, Fort D-1/2
+      {
+        id: 'COLO-FG-1',
+        hostname: 'FG-1 (Halsey)',
+        model: 'FortiGate HA Primary',
+        mgmtIp: '165 Halsey Colo',
+        role: 'Colo Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Halsey165',
+        kind: 'firewall',
+        color: '#fb7185',
+        pos: [+(coloPadCfg.cx - 3.2).toFixed(2), 0.2, +(coloPadCfg.cz + 0.2).toFixed(2)]
+      },
+      {
+        id: 'COLO-FG-2',
+        hostname: 'FG-2 (Halsey)',
+        model: 'FortiGate HA Secondary',
+        mgmtIp: '165 Halsey Colo',
+        role: 'Colo Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'Halsey165',
+        kind: 'firewall',
+        color: '#fb7185',
+        pos: [+(coloPadCfg.cx + 3.2).toFixed(2), 0.2, +(coloPadCfg.cz + 0.2).toFixed(2)]
+      },
+      {
+        id: 'COLO-NCS-5504',
+        hostname: 'NCS-5504',
+        model: 'Cisco NCS-5504 Modular',
+        mgmtIp: '165 Halsey WAN Core',
+        role: 'WAN Aggregation',
+        badge: 'NCS-5504',
+        siteCode: 'Halsey165',
+        kind: 'router',
+        color: '#a855f7',
+        pos: [coloPadCfg.cx, 0.2, +(coloPadCfg.cz - 2.3).toFixed(2)]
+      },
+      {
+        id: 'COLO-FORT-D1',
+        hostname: 'Fort D-1',
+        model: 'FortiGate / FortiDDoS Edge 1',
+        mgmtIp: 'US ISP Edge 1',
+        role: 'ISP Edge Security',
+        badge: 'FORT-D1',
+        siteCode: 'Halsey165',
+        kind: 'firewall',
+        color: '#c084fc',
+        pos: [+(coloPadCfg.cx - 3.2).toFixed(2), 0.2, +(coloPadCfg.cz - 4.7).toFixed(2)]
+      },
+      {
+        id: 'COLO-FORT-D2',
+        hostname: 'Fort D-2',
+        model: 'FortiGate / FortiDDoS Edge 2',
+        mgmtIp: 'US ISP Edge 2',
+        role: 'ISP Edge Security',
+        badge: 'FORT-D2',
+        siteCode: 'Halsey165',
+        kind: 'firewall',
+        color: '#c084fc',
+        pos: [+(coloPadCfg.cx + 3.2).toFixed(2), 0.2, +(coloPadCfg.cz - 4.7).toFixed(2)]
+      },
+      // Vancouver Campus (Top-Left Canada) Tier: V-CORE, V-FG1/2, ASA ASR, 2x NCS
+      {
+        id: 'V-CORE',
+        hostname: 'V-CORE',
+        model: 'Vancouver Campus Core',
+        mgmtIp: 'Vancouver BC Canada',
+        role: 'Canada Core',
+        badge: 'V-CORE',
+        siteCode: 'VancOakridge',
+        kind: 'router',
+        color: '#38bdf8',
+        pos: vcorePos
+      },
+      {
+        id: 'V-FG1',
+        hostname: 'V-FG1',
+        model: 'FortiGate HA 1 (CA)',
+        mgmtIp: 'Vancouver Firewall 1',
+        role: 'CA Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'VancOakridge',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(vancPadCfg.cx - 3.0).toFixed(2), 0.2, +(vancPadCfg.cz + 0.1).toFixed(2)]
+      },
+      {
+        id: 'V-FG2',
+        hostname: 'V-FG2',
+        model: 'FortiGate HA 2 (CA)',
+        mgmtIp: 'Vancouver Firewall 2',
+        role: 'CA Firewall',
+        badge: 'FORTIGATE',
+        siteCode: 'VancOakridge',
+        kind: 'firewall',
+        color: '#f43f5e',
+        pos: [+(vancPadCfg.cx + 3.0).toFixed(2), 0.2, +(vancPadCfg.cz + 0.1).toFixed(2)]
+      },
+      {
+        id: 'V-ASA-ASR',
+        hostname: 'ASA / ASR',
+        model: 'Cisco ASA / ASR Edge',
+        mgmtIp: 'Vancouver WAN Edge',
+        role: 'CA WAN Router',
+        badge: 'ASA/ASR',
+        siteCode: 'VancOakridge',
+        kind: 'router',
+        color: '#fb923c',
+        pos: [vancPadCfg.cx, 0.2, +(vancPadCfg.cz - 2.3).toFixed(2)]
+      },
+      {
+        id: 'V-NCS-1',
+        hostname: 'NCS-CA-1',
+        model: 'Cisco NCS Carrier Edge 1',
+        mgmtIp: 'Canada ISP 1',
+        role: 'CA ISP Edge',
+        badge: 'NCS',
+        siteCode: 'VancOakridge',
+        kind: 'router',
+        color: '#38bdf8',
+        pos: [+(vancPadCfg.cx - 3.0).toFixed(2), 0.2, +(vancPadCfg.cz - 4.5).toFixed(2)]
+      },
+      {
+        id: 'V-NCS-2',
+        hostname: 'NCS-CA-2',
+        model: 'Cisco NCS Carrier Edge 2',
+        mgmtIp: 'Canada ISP 2',
+        role: 'CA ISP Edge',
+        badge: 'NCS',
+        siteCode: 'VancOakridge',
+        kind: 'router',
+        color: '#38bdf8',
+        pos: [+(vancPadCfg.cx + 3.0).toFixed(2), 0.2, +(vancPadCfg.cz - 4.5).toFixed(2)]
+      }
+    ];
 
     return {
       corePos,
+      mcorePos,
+      hcorePos,
+      vcorePos,
+      advaHmPos,
+      advaHtPos,
+      advaMtPos,
       wlPos,
       wsPos,
+      vancPadCfg,
+      coloPadCfg,
       coreZoneBox,
+      mcoreZoneBox,
       switchZoneBox,
       corePeerPositions,
+      mcorePeerPositions,
       banExtraPositions,
       buildingBases,
       apPositions,
-      coloSites,
+      infraNodes,
       additionalSwitchPositions: allAdditionalSwitchPositions
     };
   }, [attachedAps, layout3D, additionalSwitches]);
@@ -1695,9 +2125,149 @@ export default function MultiDevice3DTopologyScene({
     return null;
   }, [selected3DEntity, wlNode, positions.wlPos]);
 
-  // Build 3D Conduits Connecting Exact Live Front-Panel Port Coordinates & Campus Building Bases
+  // Build 3D Conduits Connecting the US Core Triangle, Adva DWDM Shelves, FortiGates, and Campus Building Bases
   const conduits3D = useMemo(() => {
     const list = [];
+
+    // 0a. Cross-Border WAN Link: V-CORE (Vancouver Canada) <-> H-CORE (165 Halsey US Colo)
+    list.push({
+      id: 'wan-vcore-hcore',
+      isPrimaryTrunk: true,
+      verified: true,
+      color: '#22d3ee',
+      radius: 0.085,
+      badgeTitle: 'CROSS-BORDER WAN: V-CORE (Canada) ┈┈┈ H-CORE (165 Halsey US)',
+      badgeSubtitle: 'Encrypted Cross-Border Inter-Campus Tunnel • Vancouver BC ↔ Newark NJ',
+      sourceHostname: 'V-CORE (Vancouver)',
+      sourcePort: 'WAN-1',
+      targetHostname: hcoreNode?.hostname || 'hcore(FXS1836Q2KE)',
+      targetPort: 'Eth1/1',
+      speed: '10G Cross-Border WAN',
+      nativeVlan: 'Routed BGP',
+      allowedVlans: 'All Enterprise VRFs',
+      startPos: [positions.vcorePos[0] + 1.2, 0.8, positions.vcorePos[2]],
+      endPos: [positions.hcorePos[0] - 1.5, 1.1, positions.hcorePos[2]]
+    });
+
+    // 0b. US Core Triangle Leg 1: H-CORE <-> Adva-DWDM-HM <-> M-CORE (Po120 / Hu1/1/0/25, Hu2/1/0/25, Hu1/1/0/31, Hu2/1/0/31)
+    if (hcoreNode && mcoreNode) {
+      list.push({
+        id: 'dwdm-hcore-adva-hm',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#facc15',
+        radius: 0.095,
+        badgeTitle: '100G DWDM LEG 1A: H-CORE ↔ Adva-DWDM-HM (Po120)',
+        badgeSubtitle: 'Halsey165 Nexus 7706 (Eth1/9-10, Eth2/9-10) ↔ Adva Optical Shelf (VLAN 120)',
+        sourceHostname: hcoreNode.hostname,
+        sourcePort: 'Eth1/9-10, Eth2/9-10',
+        targetHostname: 'Adva-DWDM-HM',
+        targetPort: 'DWDM-LINE-1',
+        speed: '4× 100G QSFP28 Optical (Po120)',
+        nativeVlan: '120',
+        allowedVlans: 'L3/L2 Core Interconnect',
+        startPos: [positions.hcorePos[0] - 1.2, 1.2, positions.hcorePos[2] + 0.8],
+        endPos: [positions.advaHmPos[0], 0.75, positions.advaHmPos[2]]
+      });
+      list.push({
+        id: 'dwdm-adva-hm-mcore',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#facc15',
+        radius: 0.095,
+        badgeTitle: '100G DWDM LEG 1B: Adva-DWDM-HM ↔ mcore-9600 (Po120)',
+        badgeSubtitle: 'mcore-9600 (Hu1/1/0/25, Hu2/1/0/25, Hu1/1/0/31, Hu2/1/0/31) ↔ H-CORE',
+        sourceHostname: 'Adva-DWDM-HM',
+        sourcePort: 'DWDM-CLIENT-1',
+        targetHostname: mcoreNode.hostname,
+        targetPort: 'Po120 (Hu1/1/0/25,31 & Hu2/1/0/25,31)',
+        speed: '4× 100G QSFP28 Optical (Po120)',
+        nativeVlan: '120',
+        allowedVlans: 'L3/L2 Core Interconnect',
+        startPos: [positions.advaHmPos[0], 0.75, positions.advaHmPos[2]],
+        endPos: [positions.mcorePos[0] + 0.8, 1.5, positions.mcorePos[2] - 1.0]
+      });
+    }
+
+    // 0c. US Core Triangle Leg 2: H-CORE <-> Adva-DWDM-HT <-> T-CORE (Po126 / Hu1/1/0/25, Hu2/1/0/25, Hu1/1/0/31, Hu2/1/0/31)
+    if (hcoreNode && coreNode) {
+      list.push({
+        id: 'dwdm-hcore-adva-ht',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#facc15',
+        radius: 0.095,
+        badgeTitle: '100G DWDM LEG 2A: H-CORE ↔ Adva-DWDM-HT (Po126)',
+        badgeSubtitle: 'Halsey165 Nexus 7706 (Eth1/5-6, Eth2/5-6) ↔ Adva Optical Shelf (VLAN 120)',
+        sourceHostname: hcoreNode.hostname,
+        sourcePort: 'Eth1/5-6, Eth2/5-6',
+        targetHostname: 'Adva-DWDM-HT',
+        targetPort: 'DWDM-LINE-2',
+        speed: '4× 100G QSFP28 Optical (Po126)',
+        nativeVlan: '120',
+        allowedVlans: 'EIGRP Core Interconnect',
+        startPos: [positions.hcorePos[0] + 1.2, 1.2, positions.hcorePos[2] + 0.8],
+        endPos: [positions.advaHtPos[0], 0.75, positions.advaHtPos[2]]
+      });
+      list.push({
+        id: 'dwdm-adva-ht-tcore',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#facc15',
+        radius: 0.095,
+        badgeTitle: '100G DWDM LEG 2B: Adva-DWDM-HT ↔ tcore-9600 (Po126)',
+        badgeSubtitle: 'tcore-9600 (Hu1/1/0/25, Hu2/1/0/25, Hu1/1/0/31, Hu2/1/0/31) ↔ H-CORE',
+        sourceHostname: 'Adva-DWDM-HT',
+        sourcePort: 'DWDM-CLIENT-2',
+        targetHostname: coreNode.hostname,
+        targetPort: 'Po126 (Hu1/1/0/25,31 & Hu2/1/0/25,31)',
+        speed: '4× 100G QSFP28 Optical (Po126)',
+        nativeVlan: '120',
+        allowedVlans: 'EIGRP Core Interconnect',
+        startPos: [positions.advaHtPos[0], 0.75, positions.advaHtPos[2]],
+        endPos: [positions.corePos[0] - 0.8, 1.5, positions.corePos[2] - 1.0]
+      });
+    }
+
+    // 0d. US Core Triangle Leg 3 (Horizontal Inter-Campus Core): M-CORE <-> Adva-DWDM-MT <-> T-CORE (Po124 / Hu1/1/0/27 & Hu2/1/0/27)
+    if (mcoreNode && coreNode) {
+      list.push({
+        id: 'dwdm-mcore-adva-mt',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#38bdf8',
+        radius: 0.105,
+        badgeTitle: '200G INTER-CAMPUS TRUNK: mcore-9600 ↔ Adva-DWDM-MT (Po124)',
+        badgeSubtitle: 'Florham M-CORE (Hu1/1/0/27 & Hu2/1/0/27) ↔ Adva Optical Transport (VLAN 120/123)',
+        sourceHostname: mcoreNode.hostname,
+        sourcePort: 'Po124 (Hu1/1/0/27, Hu2/1/0/27)',
+        targetHostname: 'Adva-DWDM-MT',
+        targetPort: 'DWDM-WEST',
+        speed: '2× 100G QSFP28 Trunk (Po124)',
+        nativeVlan: '1',
+        allowedVlans: 'Inter-Campus Core VLANs',
+        startPos: [positions.mcorePos[0] + 1.5, 1.4, positions.mcorePos[2]],
+        endPos: [positions.advaMtPos[0] - 1.0, 0.75, positions.advaMtPos[2]]
+      });
+      list.push({
+        id: 'dwdm-adva-mt-tcore',
+        isPrimaryTrunk: true,
+        verified: true,
+        color: '#38bdf8',
+        radius: 0.105,
+        badgeTitle: '200G INTER-CAMPUS TRUNK: Adva-DWDM-MT ↔ tcore-9600 (Po124)',
+        badgeSubtitle: 'Adva Optical Transport ↔ Metro T-CORE (Hu1/1/0/27 & Hu2/1/0/27)',
+        sourceHostname: 'Adva-DWDM-MT',
+        sourcePort: 'DWDM-EAST',
+        targetHostname: coreNode.hostname,
+        targetPort: 'Po124 (Hu1/1/0/27, Hu2/1/0/27)',
+        speed: '2× 100G QSFP28 Trunk (Po124)',
+        nativeVlan: '1',
+        allowedVlans: 'Inter-Campus Core VLANs',
+        startPos: [positions.advaMtPos[0] + 1.0, 0.75, positions.advaMtPos[2]],
+        endPos: [positions.corePos[0] - 1.5, 1.4, positions.corePos[2]]
+      });
+    }
 
     // 1. Dual 25G Fiber Uplinks: T-BAN-2FL-WL (Tw1/1/1 & Tw1/1/2 in C9300-NM-8X bay) <-> tcore-9600 (Tw2/2/0/35 & Tw1/2/0/35)
     if (wlNode && coreNode) {
@@ -1762,18 +2332,25 @@ export default function MultiDevice3DTopologyScene({
       });
     }
 
-    // 2b. Campus Building Fiber Trunk Conduits from tcore-9600 to Each Campus Building Base!
-    if (coreNode && positions.buildingBases.length > 0) {
+    // 2b. Campus Building Fiber Trunk Conduits:
+    //     - Florham Building Bases connect to M-CORE (mcore-9600)
+    //     - Metro Building Bases connect to T-CORE (tcore-9600)
+    if (positions.buildingBases.length > 0) {
       positions.buildingBases.forEach((bldg, bIdx) => {
+        const isFlorhamBldg = bldg.siteCode === 'Florham';
+        const parentCore = isFlorhamBldg ? mcoreNode : coreNode;
+        const parentCorePos = isFlorhamBldg ? positions.mcorePos : positions.corePos;
+        if (!parentCore) return;
+
         list.push({
-          id: `bldg-trunk-${bldg.code}`,
+          id: `bldg-trunk-${bldg.padId}`,
           isPrimaryTrunk: false,
           verified: true,
           color: bldg.theme.rimColor,
           radius: 0.08,
-          badgeTitle: `BUILDING FIBER TRUNK: tcore-9600 ↔ ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCHES)`,
-          badgeSubtitle: `25G/100G Single-Mode Campus Fiber Bundle • Click Base Plaque to Filter ${bldg.code}`,
-          sourceHostname: coreNode.hostname,
+          badgeTitle: `BUILDING FIBER TRUNK: ${parentCore.hostname.replace(/\.net\.fdu\.edu$/i, '')} ↔ ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCHES)`,
+          badgeSubtitle: `${isFlorhamBldg ? 'Florham' : 'Metropolitan'} Campus 25G/100G Single-Mode Fiber • Click Plaque to Filter ${bldg.code}`,
+          sourceHostname: parentCore.hostname,
           sourcePort: `Campus Fiber Bundle (${bldg.code})`,
           targetHostname: `${bldg.label} (${bldg.code})`,
           targetPort: `${bldg.switches.length} IDF/MDF Switches`,
@@ -1781,32 +2358,29 @@ export default function MultiDevice3DTopologyScene({
           nativeVlan: '1',
           allowedVlans: 'All Building VLANs',
           startPos: [
-            positions.corePos[0] - 1.1,
-            1.35 + ((bIdx % 4) * 0.14),
-            positions.corePos[2] + (((bIdx % 5) - 2) * 0.28)
+            parentCorePos[0] + (((bIdx % 5) - 2) * 0.35),
+            1.25 + ((bIdx % 4) * 0.12),
+            parentCorePos[2] + 1.25
           ],
-          endPos: [bldg.cx + bldg.w / 2 - 0.6, 0.35, bldg.cz]
+          endPos: [bldg.cx, 0.35, bldg.cz - bldg.d / 2 + 0.4]
         });
       });
     }
 
-    // 2c. Switch-Level 25G/100G Fiber Uplinks (shown when a building is filtered, when Trunks=On, for Core/Bancroft peers, or for the currently selected switch!)
-    if (coreNode && positions.additionalSwitchPositions.length > 0) {
+    // 2c. Switch-Level 25G/100G Fiber Uplinks (connects Florham switches to mcore-9600 and Metro switches to tcore-9600)
+    if (positions.additionalSwitchPositions.length > 0) {
       const linksByTargetKey = new Map();
       for (const lnk of globalGraph.switchLinks || []) {
-        if (lnk.sourceKey === coreNode.key) {
-          if (!linksByTargetKey.has(lnk.targetKey)) linksByTargetKey.set(lnk.targetKey, []);
-          linksByTargetKey.get(lnk.targetKey).push(lnk);
-        } else if (lnk.targetKey === coreNode.key) {
-          if (!linksByTargetKey.has(lnk.sourceKey)) linksByTargetKey.set(lnk.sourceKey, []);
-          linksByTargetKey.get(lnk.sourceKey).push({
-            ...lnk,
-            sourceHostname: lnk.targetHostname,
-            sourcePort: lnk.targetPort,
-            targetHostname: lnk.sourceHostname,
-            targetPort: lnk.sourcePort
-          });
-        }
+        if (!linksByTargetKey.has(lnk.targetKey)) linksByTargetKey.set(lnk.targetKey, []);
+        linksByTargetKey.get(lnk.targetKey).push(lnk);
+        if (!linksByTargetKey.has(lnk.sourceKey)) linksByTargetKey.set(lnk.sourceKey, []);
+        linksByTargetKey.get(lnk.sourceKey).push({
+          ...lnk,
+          sourceHostname: lnk.targetHostname,
+          sourcePort: lnk.targetPort,
+          targetHostname: lnk.sourceHostname,
+          targetPort: lnk.sourcePort
+        });
       }
 
       const showAllSwitchConduits =
@@ -1818,6 +2392,11 @@ export default function MultiDevice3DTopologyScene({
         if (!showAllSwitchConduits && !isSelectedSwitch && !isCoreOrBan && !sw.isPolled) {
           return;
         }
+
+        const isFlorham = sw.siteCode === 'Florham';
+        const parentCore = isFlorham ? mcoreNode : coreNode;
+        const parentCorePos = isFlorham ? positions.mcorePos : positions.corePos;
+        if (!parentCore) return;
 
         const matchedLinks = linksByTargetKey.get(sw.key) || [];
         const primary = matchedLinks[0];
@@ -1836,8 +2415,8 @@ export default function MultiDevice3DTopologyScene({
           color: linkColor,
           radius: isSelectedSwitch ? 0.095 : 0.06,
           badgeTitle: `[${sw.buildingCode}] ${srcPort} ↔ ${dstPort}${dualSuffix}`,
-          badgeSubtitle: `${coreNode.hostname} ↔ ${sw.hostname} (${sw.model})`,
-          sourceHostname: coreNode.hostname,
+          badgeSubtitle: `${parentCore.hostname} ↔ ${sw.hostname} (${sw.model})`,
+          sourceHostname: parentCore.hostname,
           sourcePort: srcPort,
           targetHostname: sw.hostname,
           targetPort: dstPort,
@@ -1845,9 +2424,9 @@ export default function MultiDevice3DTopologyScene({
           nativeVlan: primary?.nativeVlan || '1',
           allowedVlans: primary?.allowedVlans || 'All Campus VLANs',
           startPos: [
-            positions.corePos[0] - 1.2,
+            parentCorePos[0] + (((idx % 7) - 3) * 0.25),
             1.15 + ((idx % 5) * 0.14),
-            positions.corePos[2] + (((idx % 7) - 3) * 0.22)
+            parentCorePos[2] + 1.1
           ],
           endPos: [pos[0] + 1.15, 0.56, pos[2] + 0.9]
         });
@@ -1880,35 +2459,14 @@ export default function MultiDevice3DTopologyScene({
       });
     }
 
-    // 4. Core to Colocation Dark Fiber Conduit
-    if (coreNode && positions.coloSites.length > 0) {
-      const halsey = positions.coloSites[0];
-      list.push({
-        id: 'wan-core-halsey165',
-        isPrimaryTrunk: true,
-        verified: false,
-        color: '#a855f7',
-        radius: 0.085,
-        badgeTitle: 'DARK FIBER WAN: Metro Core ↔ Halsey165 Colo',
-        badgeSubtitle: '40G/100G Metro ↔ Halsey165 ↔ Florham / Hastings',
-        sourceHostname: 'tcore-9600.net.fdu.edu',
-        sourcePort: 'Hu1/0/1',
-        targetHostname: 'Halsey165 (165 Halsey St Newark)',
-        targetPort: 'DWDM-1',
-        speed: '40G / 100G Dark Fiber',
-        nativeVlan: 'Routed BGP / MPLS',
-        allowedVlans: 'All Enterprise VRFs',
-        startPos: [positions.corePos[0] + 1.5, 0.9, positions.corePos[2]],
-        endPos: [halsey.pos[0] - 1.0, 0.7, halsey.pos[2]]
-      });
-    }
-
     return list;
   }, [
     positions,
     wlNode,
     workStudyNode,
     coreNode,
+    mcoreNode,
+    hcoreNode,
     globalGraph.switchLinks,
     showLinkBadges,
     activeEntity
@@ -2186,21 +2744,138 @@ export default function MultiDevice3DTopologyScene({
 
             {/* Blueprint Engineering Floor Grid */}
             <Grid
-              position={[-18, -0.18, 0]}
-              args={[160, 160]}
+              position={[0, -0.18, 12]}
+              args={[220, 220]}
               cellSize={1.5}
               cellThickness={0.6}
               cellColor="#1e3a5f"
               sectionSize={6}
               sectionThickness={1.2}
               sectionColor="#0284c7"
-              fadeDistance={165}
+              fadeDistance={210}
               fadeStrength={1.2}
             />
 
             {/* ===============================================================
-                BUILDING BASE 1: CAMPUS CORE & DATA CENTER (CORE)
-                (tcore-9600 + mcore-9600, hcore, DC1-9500, DC1-9300-NET, WLCs)
+                TOP-LEFT BASE: VANCOUVER CAMPUS (CANADA)
+                (V-CORE + V-FG1 & V-FG2 + ASA/ASR + 2x NCS)
+               =============================================================== */}
+            <ZonePlatform3D
+              padId="vancZone"
+              position={[positions.vancPadCfg.cx, 0, positions.vancPadCfg.cz]}
+              size={[positions.vancPadCfg.w, 0.36, positions.vancPadCfg.d]}
+              baseColor="#1a1228"
+              rimColor="#38bdf8"
+              title="VANCOUVER CAMPUS (CANADA) • V-CORE & FORTIGATE HA"
+              subtitle="V-CORE • V-FG1 & V-FG2 • ASA/ASR • 2× NCS Carrier Edge"
+              showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'vancZone'}
+              isParentOfDraggedDevice={false}
+              onStartPadDrag={handleStartPadDrag3D}
+            />
+
+            {/* ===============================================================
+                TOP-RIGHT BASE: US COLOCATION (165 HALSEY ST NEWARK)
+                (H-CORE Nexus 7706 + FG-1 & FG-2 + NCS-5504 + Fort D-1 & D-2)
+               =============================================================== */}
+            <ZonePlatform3D
+              padId="coloZone"
+              position={[positions.coloPadCfg.cx, 0, positions.coloPadCfg.cz]}
+              size={[positions.coloPadCfg.w, 0.36, positions.coloPadCfg.d]}
+              baseColor="#19102c"
+              rimColor="#a855f7"
+              title="165 HALSEY US COLOCATION • H-CORE (TOP APEX OF US TRIANGLE)"
+              subtitle="hcore(FXS1836Q2KE) Nexus 7706 • FG-1 & FG-2 • NCS-5504 • Fort D-1 & D-2"
+              showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
+            />
+
+            {hcoreNode && (
+              <CoreChassis9606R3D
+                deviceId="hcoreNode"
+                node={hcoreNode}
+                position={positions.hcorePos}
+                isSelected={activeEntity?.id === hcoreNode.id}
+                isDragging={false}
+                onSelect={handleSelectEntity}
+                onOpenHwDrawer={onOpenHwDrawer}
+                labelMode={labelMode}
+              />
+            )}
+
+            {/* ===============================================================
+                MIDDLE-LEFT BASE: FLORHAM CAMPUS CORE & DATA CENTER 2 (M-CORE)
+                (mcore-9600 + M-FG-1 & M-FG-2 + DC2-9500 + Flo-WLC-1/2 + ISE)
+               =============================================================== */}
+            <ZonePlatform3D
+              padId="mcoreZone"
+              position={[positions.mcoreZoneBox.cx, 0, positions.mcoreZoneBox.cz]}
+              size={[positions.mcoreZoneBox.w, 0.36, positions.mcoreZoneBox.d]}
+              baseColor="#17162e"
+              rimColor="#38bdf8"
+              title={`M-CORE • FLORHAM CAMPUS CORE & DC2 (${(mcoreNode ? 1 : 0) + positions.mcorePeerPositions.length} SWITCHES)`}
+              subtitle="mcore-9600 (132.238.129.40) + M-FG-1/2 + DC2-9500 + WLCs • Florham Buildings Below"
+              showZoneTitles={showZoneTitles}
+              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'mcoreZone'}
+              isParentOfDraggedDevice={
+                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'mcoreZone'
+              }
+              onStartPadDrag={handleStartPadDrag3D}
+              onClickTitle={
+                onSelectBuildingFilter
+                  ? () =>
+                      onSelectBuildingFilter(
+                        selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
+                      )
+                  : undefined
+              }
+            />
+
+            {mcoreNode && (
+              <CoreChassis9606R3D
+                deviceId="mcoreNode"
+                node={mcoreNode}
+                position={positions.mcorePos}
+                isSelected={activeEntity?.id === mcoreNode.id}
+                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'mcoreNode'}
+                onSelect={handleSelectEntity}
+                onStartDeviceDrag={handleStartDeviceDrag3D}
+                onOpenHwDrawer={onOpenHwDrawer}
+                labelMode={labelMode}
+              />
+            )}
+
+            {positions.mcorePeerPositions.map(({ sw, pos }) => {
+              const useCompact = positions.additionalSwitchPositions.length > 18;
+              return (
+                <SwitchC9300Node3D
+                  key={sw.id}
+                  node={sw}
+                  position={pos}
+                  portsData={
+                    useCompact
+                      ? []
+                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                  }
+                  isSelected={activeEntity?.id === sw.id}
+                  isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                  onSelect={handleSelectEntity}
+                  onOpenHwDrawer={onOpenHwDrawer}
+                  labelMode={labelMode}
+                  xrayMode={multiXrayMode}
+                  explodeFactor={multiExplode}
+                  useCompactMesh={useCompact}
+                />
+              );
+            })}
+
+            {/* ===============================================================
+                MIDDLE-RIGHT BASE: METROPOLITAN CAMPUS CORE & DATA CENTER 1 (T-CORE)
+                (tcore-9600 + T-FG-1 & T-FG-2 + DC1-9500 + DC1-9300-NET + WLCs)
                =============================================================== */}
             <ZonePlatform3D
               padId="coreZone"
@@ -2208,8 +2883,8 @@ export default function MultiDevice3DTopologyScene({
               size={[positions.coreZoneBox.w, 0.36, positions.coreZoneBox.d]}
               baseColor="#17162e"
               rimColor="#fb923c"
-              title={`CORE • CAMPUS CORE & DATA CENTER (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
-              subtitle="tcore-9600 + Data Center 9500/9300 Fabric • Click Plaque to Filter CORE"
+              title={`T-CORE • METROPOLITAN CAMPUS CORE & DC1 (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
+              subtitle="tcore-9600 (132.238.1.40) + T-FG-1/2 + DC1-9500/9300 + WLCs • Metro Buildings Below"
               showZoneTitles={showZoneTitles}
               isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
               isParentOfDraggedDevice={
@@ -2265,7 +2940,21 @@ export default function MultiDevice3DTopologyScene({
             })}
 
             {/* ===============================================================
-                BUILDING BASE 2: BANCROFT HALL (BAN)
+                OPTICAL (ADVA DWDM), FIREWALL (FORTIGATE HA) & WAN APPLIANCES
+               =============================================================== */}
+            {positions.infraNodes.map((infra) => (
+              <InfraApplianceNode3D
+                key={infra.id}
+                node={infra}
+                position={infra.pos}
+                isSelected={activeEntity?.id === infra.id}
+                onSelect={handleSelectEntity}
+                labelMode={labelMode}
+              />
+            ))}
+
+            {/* ===============================================================
+                METRO BUILDING BASE: BANCROFT HALL (BAN)
                 (T-BAN-2FL-WL + WorkStudy + T-BAN-3FL-WL + T-BAN-DC-WL + Merakis)
                =============================================================== */}
             <ZonePlatform3D
@@ -2355,11 +3044,12 @@ export default function MultiDevice3DTopologyScene({
             })}
 
             {/* ===============================================================
-                INDIVIDUAL CAMPUS BUILDING BASES (DIC, ROB, BEC, UCH, LCH, ROT, GIO, SUB, KRN, NPT, WIL, MUS, UNI, etc.)
-                Each Campus Building has its own color-coded, draggable 3D Base!
+                FLORHAM CAMPUS (SOUTH-WEST UNDER M-CORE) & METRO CAMPUS (SOUTH-EAST UNDER T-CORE)
+                INDIVIDUAL CAMPUS BUILDING BASES
                =============================================================== */}
             {positions.buildingBases.map((bldg) => {
               const useCompact = positions.additionalSwitchPositions.length > 18;
+              const campusTag = bldg.siteCode === 'Florham' ? 'FLORHAM' : 'METRO';
               return (
                 <group key={bldg.padId}>
                   <ZonePlatform3D
@@ -2368,8 +3058,8 @@ export default function MultiDevice3DTopologyScene({
                     size={[bldg.w, 0.36, bldg.d]}
                     baseColor={bldg.theme.baseColor}
                     rimColor={bldg.theme.rimColor}
-                    title={`${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'})`}
-                    subtitle="Drag Building Base to Reposition • Click Plaque to Filter Building"
+                    title={`[${campusTag}] ${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'})`}
+                    subtitle={`Connected to ${bldg.siteCode === 'Florham' ? 'mcore-9600 (Florham)' : 'tcore-9600 (Metro)'} • Click Plaque to Filter ${bldg.code}`}
                     showZoneTitles={showZoneTitles}
                     isDraggingThisPad={
                       active3DDrag?.kind === 'pad' && active3DDrag?.id === bldg.padId
@@ -2419,7 +3109,7 @@ export default function MultiDevice3DTopologyScene({
               size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
               baseColor="#081c29"
               rimColor="#38bdf8"
-              title="ZONE 3 • WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
+              title="BANCROFT WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
               subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
               showZoneTitles={showZoneTitles}
               isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
@@ -2444,41 +3134,7 @@ export default function MultiDevice3DTopologyScene({
             ))}
 
             {/* ===============================================================
-                ZONE PAD 4: COLOCATION HUBS & MULTI-CAMPUS WAN
-                (Halsey165, Hastings, Florham, VancOakridge)
-               =============================================================== */}
-            <ZonePlatform3D
-              padId="coloZone"
-              position={[layout3D.pads.coloZone.cx, 0, layout3D.pads.coloZone.cz]}
-              size={[layout3D.pads.coloZone.w, 0.36, layout3D.pads.coloZone.d]}
-              baseColor="#19102c"
-              rimColor="#a855f7"
-              title="ZONE 4 • COLOCATIONS & MULTI-CAMPUS WAN (US & CANADA)"
-              subtitle="Halsey165 (US) • Hastings (CA) • Florham • VancOakridge"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-            />
-
-            {positions.coloSites.map(({ deviceId, site, pos }) => (
-              <ColocationHub3D
-                key={site.code}
-                deviceId={deviceId}
-                site={site}
-                position={pos}
-                isSelected={activeEntity?.id === site.code}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                labelMode={labelMode}
-              />
-            ))}
-
-            {/* ===============================================================
-                3D GLOWING FIBER, MGIG TRUNK & UPOE CONDUITS
+                3D GLOWING FIBER, ADVA DWDM, MGIG TRUNK & UPOE CONDUITS
                =============================================================== */}
             {conduits3D.map((lnk) => (
               <ConduitLink3D
