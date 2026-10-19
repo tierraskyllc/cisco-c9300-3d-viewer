@@ -469,19 +469,28 @@ function ConduitLink3D({
   const packet2Ref = useRef();
   const [hovered, setHovered] = useState(false);
 
+  const [sx, sy, sz] = startPos;
+  const [ex, ey, ez] = endPos;
+
   const curve = useMemo(() => {
-    const p0 = new THREE.Vector3(...startPos);
-    const p3 = new THREE.Vector3(...endPos);
+    const p0 = new THREE.Vector3(sx, sy, sz);
+    const p3 = new THREE.Vector3(ex, ey, ez);
     const dist = p0.distanceTo(p3);
     const arcHeight = Math.min(1.6, Math.max(0.35, dist * 0.12));
     const p1 = new THREE.Vector3(p0.x, Math.max(p0.y, p3.y) + arcHeight, (p0.z * 2 + p3.z) / 3);
     const p2 = new THREE.Vector3(p3.x, Math.max(p0.y, p3.y) + arcHeight, (p0.z + p3.z * 2) / 3);
     return new THREE.CubicBezierCurve3(p0, p1, p2, p3);
-  }, [startPos, endPos]);
+  }, [sx, sy, sz, ex, ey, ez]);
 
   const tubeGeom = useMemo(() => {
-    return new THREE.TubeGeometry(curve, 36, isSelected || hovered ? radius * 1.35 : radius, 12, false);
-  }, [curve, radius, isSelected, hovered]);
+    return new THREE.TubeGeometry(curve, 28, radius, 10, false);
+  }, [curve, radius]);
+
+  useEffect(() => {
+    return () => {
+      tubeGeom.dispose();
+    };
+  }, [tubeGeom]);
 
   const midPoint = useMemo(() => curve.getPoint(0.5), [curve]);
 
@@ -1172,6 +1181,26 @@ export default function MultiDevice3DTopologyScene({
   const [saveStatus, setSaveStatus] = useState('Saved');
   const [active3DDrag, setActive3DDrag] = useState(null);
   const drag3DRef = useRef(null);
+  const padGroupRefs = useRef({});
+  const deviceGroupRefs = useRef({});
+
+  // Register a Three.js Group ref for any draggable 3D Square Base (moves Base + all switches on it at 60fps with 0 React re-renders!)
+  const registerPadGroupRef = useCallback((padId) => (el) => {
+    if (el) {
+      padGroupRefs.current[padId] = el;
+    } else {
+      delete padGroupRefs.current[padId];
+    }
+  }, []);
+
+  // Register a Three.js Group ref for any individually draggable 3D Device
+  const registerDeviceGroupRef = useCallback((deviceId) => (el) => {
+    if (el) {
+      deviceGroupRefs.current[deviceId] = el;
+    } else {
+      delete deviceGroupRefs.current[deviceId];
+    }
+  }, []);
 
   // Fetch saved 3D layout from PostgreSQL on mount
   useEffect(() => {
@@ -1224,13 +1253,17 @@ export default function MultiDevice3DTopologyScene({
         cx: fallbackCx,
         cz: fallbackCz
       };
+      const origX = typeof pad.cx === 'number' ? pad.cx : fallbackCx;
+      const origZ = typeof pad.cz === 'number' ? pad.cz : fallbackCz;
       const info = {
         kind: 'pad',
         id: padId,
         startX: hit.x,
         startZ: hit.z,
-        origX: typeof pad.cx === 'number' ? pad.cx : fallbackCx,
-        origZ: typeof pad.cz === 'number' ? pad.cz : fallbackCz,
+        origX,
+        origZ,
+        liveX: origX,
+        liveZ: origZ,
         moved: false
       };
       drag3DRef.current = info;
@@ -1257,6 +1290,8 @@ export default function MultiDevice3DTopologyScene({
         startZ: hit.z,
         origX: dev.dx,
         origZ: dev.dz,
+        liveX: dev.dx,
+        liveZ: dev.dz,
         moved: false,
         onClickCallback
       };
@@ -1267,6 +1302,7 @@ export default function MultiDevice3DTopologyScene({
   }, []);
 
   // Move handler on the 3D Floor Capture Plane while dragging
+  // Direct GPU Group transform (ZERO React state updates while moving -> eliminates WebGL frame buffer blinking!)
   const handleFloorPointerMove3D = useCallback((e) => {
     const current = drag3DRef.current;
     if (!current) return;
@@ -1283,17 +1319,12 @@ export default function MultiDevice3DTopologyScene({
     if (current.kind === 'pad') {
       const nextCx = +clamp(current.origX + deltaX, -95, 65).toFixed(2);
       const nextCz = +clamp(current.origZ + deltaZ, -75, 75).toFixed(2);
-      setLayout3D((prev) => ({
-        ...prev,
-        pads: {
-          ...prev.pads,
-          [current.id]: {
-            ...(prev.pads[current.id] || {}),
-            cx: nextCx,
-            cz: nextCz
-          }
-        }
-      }));
+      current.liveX = nextCx;
+      current.liveZ = nextCz;
+      const grp = padGroupRefs.current[current.id];
+      if (grp) {
+        grp.position.set(nextCx - current.origX, 0, nextCz - current.origZ);
+      }
     } else if (current.kind === 'device') {
       const spec = DEFAULT_3D_LAYOUT.devices[current.id] || {
         maxDx: 4.0,
@@ -1301,21 +1332,16 @@ export default function MultiDevice3DTopologyScene({
       };
       const nextDx = +clamp(current.origX + deltaX, -spec.maxDx, spec.maxDx).toFixed(2);
       const nextDz = +clamp(current.origZ + deltaZ, -spec.maxDz, spec.maxDz).toFixed(2);
-      setLayout3D((prev) => ({
-        ...prev,
-        devices: {
-          ...prev.devices,
-          [current.id]: {
-            ...prev.devices[current.id],
-            dx: nextDx,
-            dz: nextDz
-          }
-        }
-      }));
+      current.liveX = nextDx;
+      current.liveZ = nextDz;
+      const grp = deviceGroupRefs.current[current.id];
+      if (grp) {
+        grp.position.set(nextDx - current.origX, 0, nextDz - current.origZ);
+      }
     }
   }, []);
 
-  // Finalize 3D drag on pointerup anywhere
+  // Finalize 3D drag on pointerup anywhere: reset temporary GPU delta and commit once to React state + SQL
   useEffect(() => {
     if (!active3DDrag) return;
     const handleWindowPointerUp = () => {
@@ -1325,12 +1351,44 @@ export default function MultiDevice3DTopologyScene({
       setActive3DDrag(null);
       if (!current) return;
 
+      if (current.kind === 'pad') {
+        const grp = padGroupRefs.current[current.id];
+        if (grp) grp.position.set(0, 0, 0);
+      } else if (current.kind === 'device') {
+        const grp = deviceGroupRefs.current[current.id];
+        if (grp) grp.position.set(0, 0, 0);
+      }
+
       if (!current.moved && current.kind === 'device' && current.onClickCallback) {
         current.onClickCallback();
       } else if (current.moved) {
-        setLayout3D((latest) => {
-          persist3DLayout(latest);
-          return latest;
+        setLayout3D((prev) => {
+          const nextLayout =
+            current.kind === 'pad'
+              ? {
+                  ...prev,
+                  pads: {
+                    ...prev.pads,
+                    [current.id]: {
+                      ...(prev.pads[current.id] || {}),
+                      cx: current.liveX,
+                      cz: current.liveZ
+                    }
+                  }
+                }
+              : {
+                  ...prev,
+                  devices: {
+                    ...prev.devices,
+                    [current.id]: {
+                      ...prev.devices[current.id],
+                      dx: current.liveX,
+                      dz: current.liveZ
+                    }
+                  }
+                };
+          persist3DLayout(nextLayout);
+          return nextLayout;
         });
       }
     };
@@ -2760,288 +2818,359 @@ export default function MultiDevice3DTopologyScene({
                 TOP-LEFT BASE: VANCOUVER CAMPUS (CANADA)
                 (V-CORE + V-FG1 & V-FG2 + ASA/ASR + 2x NCS)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="vancZone"
-              position={[positions.vancPadCfg.cx, 0, positions.vancPadCfg.cz]}
-              size={[positions.vancPadCfg.w, 0.36, positions.vancPadCfg.d]}
-              baseColor="#1a1228"
-              rimColor="#38bdf8"
-              title="VANCOUVER CAMPUS (CANADA) • V-CORE & FORTIGATE HA"
-              subtitle="V-CORE • V-FG1 & V-FG2 • ASA/ASR • 2× NCS Carrier Edge"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'vancZone'}
-              isParentOfDraggedDevice={false}
-              onStartPadDrag={handleStartPadDrag3D}
-            />
+            <group ref={registerPadGroupRef('vancZone')}>
+              <ZonePlatform3D
+                padId="vancZone"
+                position={[positions.vancPadCfg.cx, 0, positions.vancPadCfg.cz]}
+                size={[positions.vancPadCfg.w, 0.36, positions.vancPadCfg.d]}
+                baseColor="#1a1228"
+                rimColor="#38bdf8"
+                title="VANCOUVER CAMPUS (CANADA) • V-CORE & FORTIGATE HA"
+                subtitle="V-CORE • V-FG1 & V-FG2 • ASA/ASR • 2× NCS Carrier Edge"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'vancZone'}
+                isParentOfDraggedDevice={false}
+                onStartPadDrag={handleStartPadDrag3D}
+              />
+              {positions.infraNodes
+                .filter((infra) => infra.siteCode === 'VancOakridge')
+                .map((infra) => (
+                  <InfraApplianceNode3D
+                    key={infra.id}
+                    node={infra}
+                    position={infra.pos}
+                    isSelected={activeEntity?.id === infra.id}
+                    onSelect={handleSelectEntity}
+                    labelMode={labelMode}
+                  />
+                ))}
+            </group>
 
             {/* ===============================================================
                 TOP-RIGHT BASE: US COLOCATION (165 HALSEY ST NEWARK)
                 (H-CORE Nexus 7706 + FG-1 & FG-2 + NCS-5504 + Fort D-1 & D-2)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="coloZone"
-              position={[positions.coloPadCfg.cx, 0, positions.coloPadCfg.cz]}
-              size={[positions.coloPadCfg.w, 0.36, positions.coloPadCfg.d]}
-              baseColor="#19102c"
-              rimColor="#a855f7"
-              title="165 HALSEY US COLOCATION • H-CORE (TOP APEX OF US TRIANGLE)"
-              subtitle="hcore(FXS1836Q2KE) Nexus 7706 • FG-1 & FG-2 • NCS-5504 • Fort D-1 & D-2"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-            />
-
-            {hcoreNode && (
-              <CoreChassis9606R3D
-                deviceId="hcoreNode"
-                node={hcoreNode}
-                position={positions.hcorePos}
-                isSelected={activeEntity?.id === hcoreNode.id}
-                isDragging={false}
-                onSelect={handleSelectEntity}
-                onOpenHwDrawer={onOpenHwDrawer}
-                labelMode={labelMode}
+            <group ref={registerPadGroupRef('coloZone')}>
+              <ZonePlatform3D
+                padId="coloZone"
+                position={[positions.coloPadCfg.cx, 0, positions.coloPadCfg.cz]}
+                size={[positions.coloPadCfg.w, 0.36, positions.coloPadCfg.d]}
+                baseColor="#19102c"
+                rimColor="#a855f7"
+                title="165 HALSEY US COLOCATION • H-CORE (TOP APEX OF US TRIANGLE)"
+                subtitle="hcore(FXS1836Q2KE) Nexus 7706 • FG-1 & FG-2 • NCS-5504 • Fort D-1 & D-2"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
+                isParentOfDraggedDevice={
+                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
+                }
+                onStartPadDrag={handleStartPadDrag3D}
               />
-            )}
+
+              {hcoreNode && (
+                <CoreChassis9606R3D
+                  deviceId="hcoreNode"
+                  node={hcoreNode}
+                  position={positions.hcorePos}
+                  isSelected={activeEntity?.id === hcoreNode.id}
+                  isDragging={false}
+                  onSelect={handleSelectEntity}
+                  onOpenHwDrawer={onOpenHwDrawer}
+                  labelMode={labelMode}
+                />
+              )}
+
+              {positions.infraNodes
+                .filter((infra) => infra.siteCode === 'Halsey165' && infra.kind !== 'adva')
+                .map((infra) => (
+                  <InfraApplianceNode3D
+                    key={infra.id}
+                    node={infra}
+                    position={infra.pos}
+                    isSelected={activeEntity?.id === infra.id}
+                    onSelect={handleSelectEntity}
+                    labelMode={labelMode}
+                  />
+                ))}
+            </group>
 
             {/* ===============================================================
                 MIDDLE-LEFT BASE: FLORHAM CAMPUS CORE & DATA CENTER 2 (M-CORE)
                 (mcore-9600 + M-FG-1 & M-FG-2 + DC2-9500 + Flo-WLC-1/2 + ISE)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="mcoreZone"
-              position={[positions.mcoreZoneBox.cx, 0, positions.mcoreZoneBox.cz]}
-              size={[positions.mcoreZoneBox.w, 0.36, positions.mcoreZoneBox.d]}
-              baseColor="#17162e"
-              rimColor="#38bdf8"
-              title={`M-CORE • FLORHAM CAMPUS CORE & DC2 (${(mcoreNode ? 1 : 0) + positions.mcorePeerPositions.length} SWITCHES)`}
-              subtitle="mcore-9600 (132.238.129.40) + M-FG-1/2 + DC2-9500 + WLCs • Florham Buildings Below"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'mcoreZone'}
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'mcoreZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-              onClickTitle={
-                onSelectBuildingFilter
-                  ? () =>
-                      onSelectBuildingFilter(
-                        selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
-                      )
-                  : undefined
-              }
-            />
-
-            {mcoreNode && (
-              <CoreChassis9606R3D
-                deviceId="mcoreNode"
-                node={mcoreNode}
-                position={positions.mcorePos}
-                isSelected={activeEntity?.id === mcoreNode.id}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'mcoreNode'}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                onOpenHwDrawer={onOpenHwDrawer}
-                labelMode={labelMode}
+            <group ref={registerPadGroupRef('mcoreZone')}>
+              <ZonePlatform3D
+                padId="mcoreZone"
+                position={[positions.mcoreZoneBox.cx, 0, positions.mcoreZoneBox.cz]}
+                size={[positions.mcoreZoneBox.w, 0.36, positions.mcoreZoneBox.d]}
+                baseColor="#17162e"
+                rimColor="#38bdf8"
+                title={`M-CORE • FLORHAM CAMPUS CORE & DC2 (${(mcoreNode ? 1 : 0) + positions.mcorePeerPositions.length} SWITCHES)`}
+                subtitle="mcore-9600 (132.238.129.40) + M-FG-1/2 + DC2-9500 + WLCs • Florham Buildings Below"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'mcoreZone'}
+                isParentOfDraggedDevice={
+                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'mcoreZone'
+                }
+                onStartPadDrag={handleStartPadDrag3D}
+                onClickTitle={
+                  onSelectBuildingFilter
+                    ? () =>
+                        onSelectBuildingFilter(
+                          selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
+                        )
+                    : undefined
+                }
               />
-            )}
 
-            {positions.mcorePeerPositions.map(({ sw, pos }) => {
-              const useCompact = positions.additionalSwitchPositions.length > 18;
-              return (
-                <SwitchC9300Node3D
-                  key={sw.id}
-                  node={sw}
-                  position={pos}
-                  portsData={
-                    useCompact
-                      ? []
-                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                  }
-                  isSelected={activeEntity?.id === sw.id}
-                  isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                  onSelect={handleSelectEntity}
-                  onOpenHwDrawer={onOpenHwDrawer}
-                  labelMode={labelMode}
-                  xrayMode={multiXrayMode}
-                  explodeFactor={multiExplode}
-                  useCompactMesh={useCompact}
-                />
-              );
-            })}
+              {mcoreNode && (
+                <group ref={registerDeviceGroupRef('mcoreNode')}>
+                  <CoreChassis9606R3D
+                    deviceId="mcoreNode"
+                    node={mcoreNode}
+                    position={positions.mcorePos}
+                    isSelected={activeEntity?.id === mcoreNode.id}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'mcoreNode'}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                  />
+                </group>
+              )}
+
+              {positions.infraNodes
+                .filter((infra) => infra.siteCode === 'Florham')
+                .map((infra) => (
+                  <InfraApplianceNode3D
+                    key={infra.id}
+                    node={infra}
+                    position={infra.pos}
+                    isSelected={activeEntity?.id === infra.id}
+                    onSelect={handleSelectEntity}
+                    labelMode={labelMode}
+                  />
+                ))}
+
+              {positions.mcorePeerPositions.map(({ sw, pos }) => {
+                const useCompact = positions.additionalSwitchPositions.length > 18;
+                return (
+                  <SwitchC9300Node3D
+                    key={sw.id}
+                    node={sw}
+                    position={pos}
+                    portsData={
+                      useCompact
+                        ? []
+                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                    }
+                    isSelected={activeEntity?.id === sw.id}
+                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                    onSelect={handleSelectEntity}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                    xrayMode={multiXrayMode}
+                    explodeFactor={multiExplode}
+                    useCompactMesh={useCompact}
+                  />
+                );
+              })}
+            </group>
 
             {/* ===============================================================
                 MIDDLE-RIGHT BASE: METROPOLITAN CAMPUS CORE & DATA CENTER 1 (T-CORE)
                 (tcore-9600 + T-FG-1 & T-FG-2 + DC1-9500 + DC1-9300-NET + WLCs)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="coreZone"
-              position={[positions.coreZoneBox.cx, 0, positions.coreZoneBox.cz]}
-              size={[positions.coreZoneBox.w, 0.36, positions.coreZoneBox.d]}
-              baseColor="#17162e"
-              rimColor="#fb923c"
-              title={`T-CORE • METROPOLITAN CAMPUS CORE & DC1 (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
-              subtitle="tcore-9600 (132.238.1.40) + T-FG-1/2 + DC1-9500/9300 + WLCs • Metro Buildings Below"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coreZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-              onClickTitle={
-                onSelectBuildingFilter
-                  ? () =>
-                      onSelectBuildingFilter(
-                        selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
-                      )
-                  : undefined
-              }
-            />
-
-            {coreNode && (
-              <CoreChassis9606R3D
-                deviceId="coreNode"
-                node={coreNode}
-                position={positions.corePos}
-                isSelected={activeEntity?.id === coreNode.id}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                onOpenHwDrawer={onOpenHwDrawer}
-                labelMode={labelMode}
+            <group ref={registerPadGroupRef('coreZone')}>
+              <ZonePlatform3D
+                padId="coreZone"
+                position={[positions.coreZoneBox.cx, 0, positions.coreZoneBox.cz]}
+                size={[positions.coreZoneBox.w, 0.36, positions.coreZoneBox.d]}
+                baseColor="#17162e"
+                rimColor="#fb923c"
+                title={`T-CORE • METROPOLITAN CAMPUS CORE & DC1 (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
+                subtitle="tcore-9600 (132.238.1.40) + T-FG-1/2 + DC1-9500/9300 + WLCs • Metro Buildings Below"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
+                isParentOfDraggedDevice={
+                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coreZone'
+                }
+                onStartPadDrag={handleStartPadDrag3D}
+                onClickTitle={
+                  onSelectBuildingFilter
+                    ? () =>
+                        onSelectBuildingFilter(
+                          selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
+                        )
+                    : undefined
+                }
               />
-            )}
 
-            {positions.corePeerPositions.map(({ sw, pos }) => {
-              const useCompact = positions.additionalSwitchPositions.length > 18;
-              return (
-                <SwitchC9300Node3D
-                  key={sw.id}
-                  node={sw}
-                  position={pos}
-                  portsData={
-                    useCompact
-                      ? []
-                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                  }
-                  isSelected={activeEntity?.id === sw.id}
-                  isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                  onSelect={handleSelectEntity}
-                  onOpenHwDrawer={onOpenHwDrawer}
-                  labelMode={labelMode}
-                  xrayMode={multiXrayMode}
-                  explodeFactor={multiExplode}
-                  useCompactMesh={useCompact}
-                />
-              );
-            })}
+              {coreNode && (
+                <group ref={registerDeviceGroupRef('coreNode')}>
+                  <CoreChassis9606R3D
+                    deviceId="coreNode"
+                    node={coreNode}
+                    position={positions.corePos}
+                    isSelected={activeEntity?.id === coreNode.id}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                  />
+                </group>
+              )}
+
+              {positions.infraNodes
+                .filter((infra) => infra.siteCode === 'Metro' && infra.kind !== 'adva')
+                .map((infra) => (
+                  <InfraApplianceNode3D
+                    key={infra.id}
+                    node={infra}
+                    position={infra.pos}
+                    isSelected={activeEntity?.id === infra.id}
+                    onSelect={handleSelectEntity}
+                    labelMode={labelMode}
+                  />
+                ))}
+
+              {positions.corePeerPositions.map(({ sw, pos }) => {
+                const useCompact = positions.additionalSwitchPositions.length > 18;
+                return (
+                  <SwitchC9300Node3D
+                    key={sw.id}
+                    node={sw}
+                    position={pos}
+                    portsData={
+                      useCompact
+                        ? []
+                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                    }
+                    isSelected={activeEntity?.id === sw.id}
+                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                    onSelect={handleSelectEntity}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                    xrayMode={multiXrayMode}
+                    explodeFactor={multiExplode}
+                    useCompactMesh={useCompact}
+                  />
+                );
+              })}
+            </group>
 
             {/* ===============================================================
-                OPTICAL (ADVA DWDM), FIREWALL (FORTIGATE HA) & WAN APPLIANCES
+                ADVA FSP 3000 OPTICAL DWDM SHELVES ON THE 3 US CORE TRIANGLE LEGS
                =============================================================== */}
-            {positions.infraNodes.map((infra) => (
-              <InfraApplianceNode3D
-                key={infra.id}
-                node={infra}
-                position={infra.pos}
-                isSelected={activeEntity?.id === infra.id}
-                onSelect={handleSelectEntity}
-                labelMode={labelMode}
-              />
-            ))}
+            {positions.infraNodes
+              .filter((infra) => infra.kind === 'adva')
+              .map((infra) => (
+                <InfraApplianceNode3D
+                  key={infra.id}
+                  node={infra}
+                  position={infra.pos}
+                  isSelected={activeEntity?.id === infra.id}
+                  onSelect={handleSelectEntity}
+                  labelMode={labelMode}
+                />
+              ))}
 
             {/* ===============================================================
                 METRO BUILDING BASE: BANCROFT HALL (BAN)
                 (T-BAN-2FL-WL + WorkStudy + T-BAN-3FL-WL + T-BAN-DC-WL + Merakis)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="switchZone"
-              position={[positions.switchZoneBox.cx, 0, positions.switchZoneBox.cz]}
-              size={[positions.switchZoneBox.w, 0.36, positions.switchZoneBox.d]}
-              baseColor="#091d34"
-              rimColor="#10b981"
-              title={`BAN • BANCROFT HALL (${(wlNode ? 1 : 0) + (workStudyNode ? 1 : 0) + positions.banExtraPositions.length} SWITCHES)`}
-              subtitle="2 Polled C9300-24UX + 4 Discovered Bancroft Switches • Click Plaque to Filter BAN"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={
-                active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
-              }
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'switchZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-              onClickTitle={
-                onSelectBuildingFilter
-                  ? () =>
-                      onSelectBuildingFilter(
-                        selectedBuildingFilter === 'BAN' ? 'ALL' : 'BAN'
-                      )
-                  : undefined
-              }
-            />
-
-            {wlNode && (
-              <SwitchC9300Node3D
-                deviceId="wlNode"
-                node={wlNode}
-                position={positions.wlPos}
-                portsData={buildSwitchPortsFor3DNode(wlNode, savedDevices, parsedSwitchData)}
-                isSelected={activeEntity?.id === wlNode.id}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
-                isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                onOpenHwDrawer={onOpenHwDrawer}
-                labelMode={labelMode}
-                xrayMode={multiXrayMode}
-                explodeFactor={multiExplode}
+            <group ref={registerPadGroupRef('switchZone')}>
+              <ZonePlatform3D
+                padId="switchZone"
+                position={[positions.switchZoneBox.cx, 0, positions.switchZoneBox.cz]}
+                size={[positions.switchZoneBox.w, 0.36, positions.switchZoneBox.d]}
+                baseColor="#091d34"
+                rimColor="#10b981"
+                title={`BAN • BANCROFT HALL (${(wlNode ? 1 : 0) + (workStudyNode ? 1 : 0) + positions.banExtraPositions.length} SWITCHES)`}
+                subtitle="2 Polled C9300-24UX + 4 Discovered Bancroft Switches • Click Plaque to Filter BAN"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={
+                  active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
+                }
+                isParentOfDraggedDevice={
+                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'switchZone'
+                }
+                onStartPadDrag={handleStartPadDrag3D}
+                onClickTitle={
+                  onSelectBuildingFilter
+                    ? () =>
+                        onSelectBuildingFilter(
+                          selectedBuildingFilter === 'BAN' ? 'ALL' : 'BAN'
+                        )
+                    : undefined
+                }
               />
-            )}
 
-            {workStudyNode && (
-              <SwitchC9300Node3D
-                deviceId="wsNode"
-                node={workStudyNode}
-                position={positions.wsPos}
-                portsData={buildSwitchPortsFor3DNode(workStudyNode, savedDevices, parsedSwitchData)}
-                isSelected={activeEntity?.id === workStudyNode.id}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
-                isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                onOpenHwDrawer={onOpenHwDrawer}
-                labelMode={labelMode}
-                xrayMode={multiXrayMode}
-                explodeFactor={multiExplode}
-              />
-            )}
+              {wlNode && (
+                <group ref={registerDeviceGroupRef('wlNode')}>
+                  <SwitchC9300Node3D
+                    deviceId="wlNode"
+                    node={wlNode}
+                    position={positions.wlPos}
+                    portsData={buildSwitchPortsFor3DNode(wlNode, savedDevices, parsedSwitchData)}
+                    isSelected={activeEntity?.id === wlNode.id}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
+                    isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                    xrayMode={multiXrayMode}
+                    explodeFactor={multiExplode}
+                  />
+                </group>
+              )}
 
-            {positions.banExtraPositions.map(({ sw, pos }) => {
-              const useCompact = positions.additionalSwitchPositions.length > 18;
-              return (
-                <SwitchC9300Node3D
-                  key={sw.id}
-                  node={sw}
-                  position={pos}
-                  portsData={
-                    useCompact
-                      ? []
-                      : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                  }
-                  isSelected={activeEntity?.id === sw.id}
-                  isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                  onSelect={handleSelectEntity}
-                  onOpenHwDrawer={onOpenHwDrawer}
-                  labelMode={labelMode}
-                  xrayMode={multiXrayMode}
-                  explodeFactor={multiExplode}
-                  useCompactMesh={useCompact}
-                />
-              );
-            })}
+              {workStudyNode && (
+                <group ref={registerDeviceGroupRef('wsNode')}>
+                  <SwitchC9300Node3D
+                    deviceId="wsNode"
+                    node={workStudyNode}
+                    position={positions.wsPos}
+                    portsData={buildSwitchPortsFor3DNode(workStudyNode, savedDevices, parsedSwitchData)}
+                    isSelected={activeEntity?.id === workStudyNode.id}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
+                    isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                    xrayMode={multiXrayMode}
+                    explodeFactor={multiExplode}
+                  />
+                </group>
+              )}
+
+              {positions.banExtraPositions.map(({ sw, pos }) => {
+                const useCompact = positions.additionalSwitchPositions.length > 18;
+                return (
+                  <SwitchC9300Node3D
+                    key={sw.id}
+                    node={sw}
+                    position={pos}
+                    portsData={
+                      useCompact
+                        ? []
+                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                    }
+                    isSelected={activeEntity?.id === sw.id}
+                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                    onSelect={handleSelectEntity}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                    xrayMode={multiXrayMode}
+                    explodeFactor={multiExplode}
+                    useCompactMesh={useCompact}
+                  />
+                );
+              })}
+            </group>
 
             {/* ===============================================================
                 FLORHAM CAMPUS (SOUTH-WEST UNDER M-CORE) & METRO CAMPUS (SOUTH-EAST UNDER T-CORE)
@@ -3051,7 +3180,7 @@ export default function MultiDevice3DTopologyScene({
               const useCompact = positions.additionalSwitchPositions.length > 18;
               const campusTag = bldg.siteCode === 'Florham' ? 'FLORHAM' : 'METRO';
               return (
-                <group key={bldg.padId}>
+                <group key={bldg.padId} ref={registerPadGroupRef(bldg.padId)}>
                   <ZonePlatform3D
                     padId={bldg.padId}
                     position={[bldg.cx, 0, bldg.cz]}
@@ -3103,35 +3232,38 @@ export default function MultiDevice3DTopologyScene({
             {/* ===============================================================
                 ZONE PAD 3: WI-FI 6 UPOE ACCESS LAYER FLEET (7 APs • 194.0W)
                =============================================================== */}
-            <ZonePlatform3D
-              padId="apZone"
-              position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
-              size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
-              baseColor="#081c29"
-              rimColor="#38bdf8"
-              title="BANCROFT WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
-              subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
-              showZoneTitles={showZoneTitles}
-              isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
-              isParentOfDraggedDevice={
-                active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
-              }
-              onStartPadDrag={handleStartPadDrag3D}
-            />
-
-            {positions.apPositions.map(({ deviceId, ap, pos }) => (
-              <WirelessApNode3D
-                key={ap.hostname}
-                deviceId={deviceId}
-                ap={ap}
-                position={pos}
-                isSelected={activeEntity?.id === ap.hostname}
-                isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
-                onSelect={handleSelectEntity}
-                onStartDeviceDrag={handleStartDeviceDrag3D}
-                labelMode={labelMode}
+            <group ref={registerPadGroupRef('apZone')}>
+              <ZonePlatform3D
+                padId="apZone"
+                position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
+                size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
+                baseColor="#081c29"
+                rimColor="#38bdf8"
+                title="BANCROFT WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
+                subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
+                showZoneTitles={showZoneTitles}
+                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
+                isParentOfDraggedDevice={
+                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
+                }
+                onStartPadDrag={handleStartPadDrag3D}
               />
-            ))}
+
+              {positions.apPositions.map(({ deviceId, ap, pos }) => (
+                <group key={ap.hostname} ref={registerDeviceGroupRef(deviceId)}>
+                  <WirelessApNode3D
+                    deviceId={deviceId}
+                    ap={ap}
+                    position={pos}
+                    isSelected={activeEntity?.id === ap.hostname}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    labelMode={labelMode}
+                  />
+                </group>
+              ))}
+            </group>
 
             {/* ===============================================================
                 3D GLOWING FIBER, ADVA DWDM, MGIG TRUNK & UPOE CONDUITS
@@ -3156,6 +3288,7 @@ export default function MultiDevice3DTopologyScene({
               scale={44}
               blur={2.2}
               far={12}
+              frames={1}
             />
           </Canvas>
 
