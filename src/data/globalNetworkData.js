@@ -329,6 +329,14 @@ export const FDU_BUILDING_DIRECTORY = {
   PSO: 'Public Safety (PSO)',
   WRG: '10 Woodridge Ave (WRG)',
   FIT: 'Fitness Center (FIT)',
+  STS: 'Sycamore / Rabinowitz (STS)',
+  SFB: 'Soccer / Athletics Field Bldg (SFB)',
+  PUR: 'Purchasing Building (PUR)',
+  POL: 'Political Science House (POL)',
+  ISS: 'Information Systems / ISS (ISS)',
+  EOF: 'EOF Building (EOF)',
+  LNG: 'Language House (LNG)',
+  RIV: '838 River Rd / Ruben House (RIV)',
   FDH: 'Fordmansion / FDH (FDH)',
   INT: 'International House (INT)',
   BBF: 'Baseball Field (BBF)',
@@ -364,8 +372,32 @@ export const FDU_BUILDING_DIRECTORY = {
   CHL: 'Chiller / Central Plant (CHL)',
   STAD: 'Robert Shields Stadium (STAD)',
   FFB: 'Florham Football / Athletics (FFB)',
-  BFB: 'Florham Baseball / Field (BFB)'
+  BFB: 'Florham Baseball / Field (BFB)',
+  OTHER: 'Unassigned / Other IDF (OTHER)'
 };
+
+export const SWITCH_GROUP_OVERRIDES_STORAGE_KEY = 'fdu_switch_group_overrides_v1';
+export const API_SWITCH_GROUP_OVERRIDES_ENDPOINT = '/api/topology/layouts/switch_group_overrides_v1';
+
+export function getStoredSwitchGroupOverrides() {
+  try {
+    if (typeof localStorage !== 'undefined') {
+      const raw = localStorage.getItem(SWITCH_GROUP_OVERRIDES_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            customGroups: parsed.customGroups || {},
+            assignments: parsed.assignments || {}
+          };
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+  return { customGroups: {}, assignments: {} };
+}
 
 export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole = '') {
   const norm = normalizeHostname(hostname);
@@ -385,7 +417,7 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
   }
 
   // Match FDU hostname pattern across Metro (T-), Florham/Madison (M- or F-), Vancouver (V-), Halsey (H-):
-  // e.g. T-BAN-2FL-WL, M-SCI-1FL, M-VIL1-1FL, T-BBF
+  // e.g. T-BAN-2FL-WL, M-SCI-1FL, M-VIL1-1FL, T-BBF, T-SFB-WL
   const prefixMatch = norm.match(/^[TFMVH]-([A-Z0-9]{2,8})(?:-|$)/i);
   if (prefixMatch) {
     let code = prefixMatch[1].toUpperCase();
@@ -407,7 +439,7 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
     };
   }
 
-  // Match real FDU Meraki & Catalyst interface descriptions on tcore-9600 (Metro) and mcore-9600 (Florham)
+  // Match real FDU Meraki & Catalyst interface descriptions on tcore-9600 (Metro), mcore-9600 (Florham), DC1-9500, and DC1-2-9500
   if (/SCHOOL-PHAR|\bSOP\d*|\bPHRMCY/i.test(combined)) {
     return { buildingCode: 'SOP', buildingLabel: FDU_BUILDING_DIRECTORY.SOP };
   }
@@ -444,7 +476,7 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
   if (/\bCOT-EAST|\bCOT-WEST|\bCOT\b/i.test(combined)) {
     return { buildingCode: 'COT', buildingLabel: FDU_BUILDING_DIRECTORY.COT };
   }
-  if (/\bCHA-1FL|\bCHA\b/i.test(combined)) {
+  if (/CHAPEL|\bCHA-1FL|\bCHA\b/i.test(combined)) {
     return { buildingCode: 'CHA', buildingLabel: FDU_BUILDING_DIRECTORY.CHA };
   }
   if (/FERGUSON|\bFER\b|\bREC\b/i.test(combined)) {
@@ -495,22 +527,49 @@ export function inferBuildingInfo(hostname = '', rawBuildingName = '', nodeRole 
   if (/\bUSAS-|\bUNI\b/i.test(combined)) {
     return { buildingCode: 'UNI', buildingLabel: FDU_BUILDING_DIRECTORY.UNI };
   }
-  if (/METRO-SUB|METROSUB|\bSUB\b/i.test(combined)) {
+  if (/METRO-SUB|METROSUB|\bSUBS\b|\bSUBN\b|\bSUB\b/i.test(combined)) {
     return { buildingCode: 'SUB', buildingLabel: FDU_BUILDING_DIRECTORY.SUB };
   }
-  if (/NORTHPOINTE|\bNPT\b/i.test(combined)) {
+  if (/NORTHPOINTE|NORTHPT|\bNPT\b/i.test(combined)) {
     return { buildingCode: 'NPT', buildingLabel: FDU_BUILDING_DIRECTORY.NPT };
+  }
+  if (/TEMPLE|\bTPL\b/i.test(combined)) {
+    return { buildingCode: 'TPL', buildingLabel: FDU_BUILDING_DIRECTORY.TPL };
+  }
+  if (/FITNESS|\bFIT\b/i.test(combined)) {
+    return { buildingCode: 'FIT', buildingLabel: FDU_BUILDING_DIRECTORY.FIT };
+  }
+  if (/RABINOWITZ|\bSTS-|\bSTS\b/i.test(combined)) {
+    return { buildingCode: 'STS', buildingLabel: FDU_BUILDING_DIRECTORY.STS };
+  }
+  if (/LANGUAGEHSE|LANGUAGE|\bLNG\b/i.test(combined)) {
+    return { buildingCode: 'LNG', buildingLabel: FDU_BUILDING_DIRECTORY.LNG };
+  }
+  if (/PURCHASING|\bPUR\b/i.test(combined)) {
+    return { buildingCode: 'PUR', buildingLabel: FDU_BUILDING_DIRECTORY.PUR };
+  }
+  if (/POLITICAL|\bPOL\b/i.test(combined)) {
+    return { buildingCode: 'POL', buildingLabel: FDU_BUILDING_DIRECTORY.POL };
+  }
+  if (/\bISS-|\bISS\b/i.test(combined)) {
+    return { buildingCode: 'ISS', buildingLabel: FDU_BUILDING_DIRECTORY.ISS };
+  }
+  if (/\bEOF-|\bEOF\b/i.test(combined)) {
+    return { buildingCode: 'EOF', buildingLabel: FDU_BUILDING_DIRECTORY.EOF };
+  }
+  if (/838RIVERRD|RUBEN_HOUSE|\bRIV\b/i.test(combined)) {
+    return { buildingCode: 'RIV', buildingLabel: FDU_BUILDING_DIRECTORY.RIV };
   }
 
   for (const [code, label] of Object.entries(FDU_BUILDING_DIRECTORY)) {
-    if (code !== 'CORE' && new RegExp(`\\b${code}\\b`, 'i').test(combined)) {
+    if (code !== 'CORE' && code !== 'OTHER' && new RegExp(`\\b${code}\\b`, 'i').test(combined)) {
       return { buildingCode: code, buildingLabel: label };
     }
   }
 
   return {
     buildingCode: 'OTHER',
-    buildingLabel: bldgHint && !bldgHint.startsWith('Connected via') ? bldgHint : 'Other Campus / IDF'
+    buildingLabel: bldgHint && !bldgHint.startsWith('Connected via') ? bldgHint : 'Unassigned / Other IDF (OTHER)'
   };
 }
 
@@ -585,7 +644,15 @@ export function classifyLinkMedia(localPort = '', remotePort = '', mediaType = '
  * - switchLinks: Switch-to-Switch physical interconnections (for the visual multi-switch diagram)
  * - siteSummary / siteStats: Per-site counts for Metro, Florham, Halsey165, VancOakridge, Hastings
  */
-export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch = null) {
+export function buildGlobalAndSiteTopology(
+  savedDevices = [],
+  activeParsedSwitch = null,
+  switchGroupOverrides = null
+) {
+  const activeOverrides = switchGroupOverrides || getStoredSwitchGroupOverrides();
+  const customGroupsMap = activeOverrides?.customGroups || {};
+  const assignmentsMap = activeOverrides?.assignments || {};
+
   const hasRealDevice = savedDevices.some(
     (d) => d.serial_number && d.serial_number !== 'FOC2534L9K1'
   );
@@ -655,6 +722,11 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       id: normHost,
       key: normHost,
       hostname,
+      rawDeviceId: hostname,
+      interfaceDescription: dev.building_name || '',
+      upstreamSwitch: 'Polled Directly (SQL)',
+      upstreamPort: '—',
+      remotePort: '—',
       normHost,
       model,
       portCount: model.includes('-24') ? 24 : 48,
@@ -662,8 +734,11 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       iosVersion: snap.device?.iosVersion || dev.ios_version || '17.x',
       mgmtIp,
       siteCode,
+      autoSiteCode: siteCode,
       buildingCode: bldgInfo.buildingCode,
+      autoBuildingCode: bldgInfo.buildingCode,
       buildingLabel: bldgInfo.buildingLabel,
+      autoBuildingLabel: bldgInfo.buildingLabel,
       buildingName: dev.building_name || bldgInfo.buildingLabel,
       isPolled: true,
       isSwitchNode: true,
@@ -675,6 +750,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
       trunkCount: (snap.trunks || []).length,
       vlanCount: (snap.vlans || []).length,
       attachedEndpoints: [],
+      switchLinks: [],
       rawDeviceRecord: dev
     };
 
@@ -763,12 +839,24 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             isEndpoint ? sourceNode.buildingLabel : portDesc,
             targetRole
           );
+          const resolvedBldgCode =
+            targetBldg.buildingCode === 'OTHER' && isEndpoint
+              ? sourceNode.buildingCode
+              : targetBldg.buildingCode;
+          const resolvedBldgLabel =
+            targetBldg.buildingCode === 'OTHER' && isEndpoint
+              ? sourceNode.buildingLabel
+              : targetBldg.buildingLabel;
+
           targetNode = {
             id: targetNorm,
             key: targetNorm,
             hostname: targetRawHost,
             rawDeviceId,
             interfaceDescription: portDesc,
+            upstreamSwitch: sourceHost,
+            upstreamPort: localPort || '—',
+            remotePort: remotePort || '—',
             normHost: targetNorm,
             model: cleanPlatform,
             portCount: cleanPlatform.includes('-24') ? 24 : 48,
@@ -776,14 +864,11 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             iosVersion: cdp.softwareVersion || 'Discovered via CDP',
             mgmtIp: cdp.neighborIp || '—',
             siteCode: inferredSite,
-            buildingCode:
-              targetBldg.buildingCode === 'OTHER' && isEndpoint
-                ? sourceNode.buildingCode
-                : targetBldg.buildingCode,
-            buildingLabel:
-              targetBldg.buildingCode === 'OTHER' && isEndpoint
-                ? sourceNode.buildingLabel
-                : targetBldg.buildingLabel,
+            autoSiteCode: inferredSite,
+            buildingCode: resolvedBldgCode,
+            autoBuildingCode: resolvedBldgCode,
+            buildingLabel: resolvedBldgLabel,
+            autoBuildingLabel: resolvedBldgLabel,
             buildingName: portDesc
               ? `${portDesc} • via ${sourceHost} (${localPort})`
               : `Connected via ${sourceHost} (${localPort})`,
@@ -796,10 +881,25 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
             cdpCount: 0,
             trunkCount: 0,
             vlanCount: 0,
-            attachedEndpoints: []
+            attachedEndpoints: [],
+            switchLinks: []
           };
           nodesByKey.set(targetNorm, targetNode);
+        } else {
+          targetNode.connectedPorts = (targetNode.connectedPorts || 1) + 1;
+          if (!targetNode.interfaceDescription && portDesc) {
+            targetNode.interfaceDescription = portDesc;
+          }
         }
+      } else if (
+        targetNode.isPolled &&
+        targetNode.upstreamSwitch === 'Polled Directly (SQL)' &&
+        sourceNode.key !== targetNode.key
+      ) {
+        targetNode.upstreamSwitch = sourceHost;
+        targetNode.upstreamPort = localPort || '—';
+        targetNode.remotePort = remotePort || '—';
+        if (portDesc) targetNode.interfaceDescription = portDesc;
       }
 
       // If this neighbor is an AP/Endpoint, attach it to sourceNode.attachedEndpoints for the visual node badge
@@ -842,7 +942,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
         existingLink.verifiedBiDirectional = true;
       } else {
         const isBiDir = Boolean(sourceNode.isPolled && targetNode.isPolled);
-        linksByCanonicalKey.set(canonicalKey, {
+        const linkObj = {
           id: canonicalKey,
           siteCode: sourceNode.siteCode,
           sourceKey: sourceNode.key,
@@ -861,6 +961,7 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           targetRole: targetNode.nodeRole,
           targetSerial: targetNode.serialNumber,
           targetBuildingCode: targetNode.buildingCode,
+          portDescription: portDesc || '',
           isSwitchInterconnect: Boolean(sourceNode.isSwitchNode && targetNode.isSwitchNode),
           mediaCategory: mediaInfo.category,
           mediaLabel: mediaInfo.label,
@@ -872,13 +973,58 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
           poeWatts: cdp.powerWatts || localPortObj?.poeWatts || 0,
           bidirectionalVerified: isBiDir,
           verifiedBiDirectional: isBiDir
-        });
+        };
+        linksByCanonicalKey.set(canonicalKey, linkObj);
+        if (linkObj.isSwitchInterconnect) {
+          sourceNode.switchLinks.push({
+            localPort: localPort || '—',
+            remotePort: remotePort || '—',
+            remoteHostname: targetNode.hostname,
+            remoteKey: targetNode.key
+          });
+          targetNode.switchLinks.push({
+            localPort: remotePort || '—',
+            remotePort: localPort || '—',
+            remoteHostname: sourceNode.hostname,
+            remoteKey: sourceNode.key
+          });
+        }
       }
+    }
+  }
+
+  // Apply any User-Defined Group Overrides (Building Group / Campus Site) before computing tiers & building clusters
+  for (const node of nodesByKey.values()) {
+    const ov = assignmentsMap[node.key] || assignmentsMap[node.id];
+    if (ov) {
+      if (ov.siteCode) {
+        node.siteCode = ov.siteCode;
+      }
+      if (ov.buildingCode) {
+        const customGrp = customGroupsMap[ov.buildingCode];
+        node.buildingCode = ov.buildingCode;
+        node.buildingLabel =
+          ov.buildingLabel ||
+          customGrp?.label ||
+          FDU_BUILDING_DIRECTORY[ov.buildingCode] ||
+          `${ov.buildingCode} Building (${ov.buildingCode})`;
+      }
+      node.hasManualGroupOverride = true;
+    } else {
+      node.hasManualGroupOverride = false;
     }
   }
 
   const allNodes = Array.from(nodesByKey.values());
   const allLinks = Array.from(linksByCanonicalKey.values());
+  // Sync link building codes with any overridden node building codes
+  for (const lnk of allLinks) {
+    const sNode = nodesByKey.get(lnk.sourceKey);
+    const tNode = nodesByKey.get(lnk.targetKey);
+    if (sNode) lnk.sourceBuildingCode = sNode.buildingCode;
+    if (tNode) lnk.targetBuildingCode = tNode.buildingCode;
+  }
+
   const switchNodes = allNodes.filter((n) => n.isSwitchNode);
   const switchLinks = allLinks.filter((l) => l.isSwitchInterconnect);
 
@@ -916,13 +1062,34 @@ export function buildGlobalAndSiteTopology(savedDevices = [], activeParsedSwitch
 
   // Step 4: Build Discovered & Polled Buildings Directory (for Building / Device Filtering)
   const buildingMap = new Map();
+  // Seed any custom user-created groups so they appear even when 0 switches are assigned yet
+  for (const [code, grp] of Object.entries(customGroupsMap)) {
+    buildingMap.set(code, {
+      code,
+      label: grp.label || `${code} Building (${code})`,
+      siteCode: grp.siteCode || 'Metro',
+      isCustomGroup: true,
+      switchCount: 0,
+      polledCount: 0,
+      unpolledCount: 0,
+      apCount: 0
+    });
+  }
+
   for (const sw of switchNodes) {
     const code = sw.buildingCode || 'OTHER';
-    const label = sw.buildingLabel || FDU_BUILDING_DIRECTORY[code] || `${code} Building`;
+    const customGrp = customGroupsMap[code];
+    const label =
+      customGrp?.label ||
+      sw.buildingLabel ||
+      FDU_BUILDING_DIRECTORY[code] ||
+      `${code} Building`;
     if (!buildingMap.has(code)) {
       buildingMap.set(code, {
         code,
         label,
+        siteCode: sw.siteCode || 'Metro',
+        isCustomGroup: Boolean(customGrp),
         switchCount: 0,
         polledCount: 0,
         unpolledCount: 0,

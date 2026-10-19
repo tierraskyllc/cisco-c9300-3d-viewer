@@ -22,7 +22,8 @@ import {
   Building2,
   Eye,
   EyeOff,
-  Filter
+  Filter,
+  Table2
 } from 'lucide-react';
 import { SWITCH_MODELS, getPortCountForModel } from '../data/c9300HardwareData';
 import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkData';
@@ -30,7 +31,7 @@ import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkD
 /**
  * Left-Hand Collapsible Navigation & Categorized Network Inventory Drawer
  * Houses:
- * 1) Primary View Mode Switcher (Multi-Device 3D | Single 3D Chassis | 2D Blueprint & Tables)
+ * 1) Primary View Mode Switcher (Multi-Device 3D | Switch & Group Table | Single 3D Chassis | 2D Blueprint & Tables)
  * 2) Contextual Selected Device Card (Appears when a device is clicked in the 3D/2D view or selected in Inventory):
  *    - Saved SQL Device Switcher Dropdown
  *    - Hardware Model SKU Dropdown (24-Port / 48-Port)
@@ -49,6 +50,7 @@ export default function LeftNavInventoryDrawer({
   onSelectViewMode,
   parsedSwitchData,
   savedDevices = [],
+  switchGroupOverrides = null,
   switchModelId,
   onModelChange,
   onSelectSavedDevice,
@@ -85,11 +87,16 @@ export default function LeftNavInventoryDrawer({
 
   // Build unified multi-switch & multi-campus topology graph for inventory categorization
   const globalGraph = useMemo(() => {
-    return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData);
-  }, [savedDevices, parsedSwitchData]);
+    return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData, switchGroupOverrides);
+  }, [savedDevices, parsedSwitchData, switchGroupOverrides]);
 
   const activePortCount = getPortCountForModel(switchModelId);
   const hiddenSet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
+  const unassignedCount = useMemo(() => {
+    return (globalGraph.switchNodes || []).filter(
+      (n) => !n.buildingCode || n.buildingCode === 'OTHER'
+    ).length;
+  }, [globalGraph]);
 
   // Categorize all discovered & polled inventory items (filtered by searchQuery + selectedBuildingFilter)
   const inventory = useMemo(() => {
@@ -192,6 +199,13 @@ export default function LeftNavInventoryDrawer({
 
   const navModes = [
     { id: 'multi-3d', label: 'Multi-Device 3D', short: '3D Scene', icon: Sparkles },
+    {
+      id: 'switch-table',
+      label: 'Switch & Group Table',
+      short: 'Group Table',
+      icon: Table2,
+      badge: unassignedCount
+    },
     { id: '3d', label: 'Single 3D Chassis', short: 'Chassis', icon: Box },
     { id: 'topology', label: '2D Blueprint & Tables', short: 'Blueprint', icon: Network }
   ];
@@ -214,7 +228,7 @@ export default function LeftNavInventoryDrawer({
 
         <div className="w-8 h-[1px] bg-slate-800 my-0.5" />
 
-        {/* 3 View Mode Icons */}
+        {/* 4 View Mode Icons */}
         {navModes.map((m) => {
           const Icon = m.icon;
           const active = viewMode === m.id;
@@ -223,7 +237,7 @@ export default function LeftNavInventoryDrawer({
               key={m.id}
               type="button"
               onClick={() => handleChangeViewMode && handleChangeViewMode(m.id)}
-              className={`w-9 h-9 rounded-lg flex items-center justify-center transition cursor-pointer ${
+              className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition cursor-pointer ${
                 active
                   ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/30'
                   : 'bg-slate-900 text-slate-400 hover:text-white hover:bg-slate-800 border border-slate-800'
@@ -231,6 +245,11 @@ export default function LeftNavInventoryDrawer({
               title={m.label}
             >
               <Icon className="w-4 h-4" />
+              {m.badge > 0 && (
+                <span className="absolute -top-1 -right-1 px-1 rounded-full bg-amber-500 text-slate-950 text-[8px] font-mono font-black">
+                  {m.badge}
+                </span>
+              )}
             </button>
           );
         })}
@@ -330,18 +349,25 @@ export default function LeftNavInventoryDrawer({
                 key={mode.id}
                 type="button"
                 onClick={() => handleChangeViewMode && handleChangeViewMode(mode.id)}
-                className={`flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
-                  mode.id === 'multi-3d' ? 'col-span-2' : ''
-                } ${
+                className={`flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-semibold transition cursor-pointer ${
                   active
                     ? mode.id === 'multi-3d'
                       ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow'
+                      : mode.id === 'switch-table'
+                      ? 'bg-gradient-to-r from-emerald-600 to-cyan-600 text-white shadow'
                       : 'bg-sky-600 text-white shadow'
+                    : mode.id === 'switch-table'
+                    ? 'bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30'
                     : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800/90'
                 }`}
               >
                 <Icon className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">{mode.label}</span>
+                {mode.badge > 0 && (
+                  <span className="px-1 py-0.2 rounded-full bg-amber-500 text-slate-950 text-[9px] font-mono font-black shrink-0">
+                    {mode.badge}
+                  </span>
+                )}
               </button>
             );
           })}

@@ -1162,7 +1162,8 @@ export default function MultiDevice3DTopologyScene({
   selectedBuildingFilter = 'ALL',
   onSelectBuildingFilter,
   showUnpolledCdpNeighbors = false,
-  hiddenDeviceKeys = []
+  hiddenDeviceKeys = [],
+  switchGroupOverrides = null
 }) {
   const controlsRef = useRef();
   const [cameraPreset, setCameraPreset] = useState('blueprint-iso');
@@ -1331,8 +1332,8 @@ export default function MultiDevice3DTopologyScene({
     }
 
     if (current.kind === 'pad') {
-      const nextCx = +clamp(current.origX + deltaX, -95, 65).toFixed(2);
-      const nextCz = +clamp(current.origZ + deltaZ, -75, 75).toFixed(2);
+      const nextCx = +clamp(current.origX + deltaX, -145, 145).toFixed(2);
+      const nextCz = +clamp(current.origZ + deltaZ, -135, 135).toFixed(2);
       current.liveX = nextCx;
       current.liveZ = nextCz;
       const grp = padGroupRefs.current[current.id];
@@ -1341,11 +1342,13 @@ export default function MultiDevice3DTopologyScene({
       }
     } else if (current.kind === 'device') {
       const spec = DEFAULT_3D_LAYOUT.devices[current.id] || {
-        maxDx: 4.0,
-        maxDz: 4.0
+        maxDx: 18.0,
+        maxDz: 18.0
       };
-      const nextDx = +clamp(current.origX + deltaX, -spec.maxDx, spec.maxDx).toFixed(2);
-      const nextDz = +clamp(current.origZ + deltaZ, -spec.maxDz, spec.maxDz).toFixed(2);
+      const maxDx = Math.max(spec.maxDx || 18.0, 18.0);
+      const maxDz = Math.max(spec.maxDz || 18.0, 18.0);
+      const nextDx = +clamp(current.origX + deltaX, -maxDx, maxDx).toFixed(2);
+      const nextDz = +clamp(current.origZ + deltaZ, -maxDz, maxDz).toFixed(2);
       current.liveX = nextDx;
       current.liveZ = nextDz;
       const grp = deviceGroupRefs.current[current.id];
@@ -1458,8 +1461,8 @@ export default function MultiDevice3DTopologyScene({
 
   // Build unified multi-switch & multi-campus topology graph
   const globalGraph = useMemo(() => {
-    return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData);
-  }, [savedDevices, parsedSwitchData]);
+    return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData, switchGroupOverrides);
+  }, [savedDevices, parsedSwitchData, switchGroupOverrides]);
 
   const hiddenSet = useMemo(() => new Set(hiddenDeviceKeys), [hiddenDeviceKeys]);
 
@@ -1716,7 +1719,17 @@ export default function MultiDevice3DTopologyScene({
       }
     }
 
-    // 2a. Place Metro Core Peers (DC1-9500, DC1-9300-NET, Metro-WLC-1/2, etc.) on T-CORE Base (coreZone)
+    // 2a. Place Metro Core Peers (DC1-9500, DC1-2-9500, DC1-9300-NET, Metro-WLC-1/2, etc.) on T-CORE Base (coreZone)
+    // Sort Polled SQL switches (DC1-9500, DC1-2-9500) first so they sit in the front row!
+    metroCorePeers.sort((a, b) => {
+      if (a.isPolled !== b.isPolled) return a.isPolled ? -1 : 1;
+      return (a.hostname || '').localeCompare(b.hostname || '');
+    });
+    florhamCorePeers.sort((a, b) => {
+      if (a.isPolled !== b.isPolled) return a.isPolled ? -1 : 1;
+      return (a.hostname || '').localeCompare(b.hostname || '');
+    });
+
     const coreCols = 3;
     const coreRows = Math.ceil(metroCorePeers.length / coreCols);
     const coreColSpacing = 4.05;
@@ -2448,70 +2461,167 @@ export default function MultiDevice3DTopologyScene({
       });
     }
 
-    // 2c. Switch-Level 25G/100G Fiber Uplinks (connects Florham switches to mcore-9600 and Metro switches to tcore-9600)
+    // 2c. True Switch-to-Switch 25G/100G Fiber Interconnects:
+    //     - Connects DC1-9500 & DC1-2-9500 (and all Core/DC peers) to tcore-9600 / mcore-9600
+    //     - Connects every downstream switch polled on DC1-9500 (38 CDP links) and DC1-2-9500 (11 CDP links)
+    //       directly from DC1-9500 / DC1-2-9500's 3D chassis position to its target switch on its Building Base!
     if (positions.additionalSwitchPositions.length > 0) {
-      const linksByTargetKey = new Map();
+      const posBySwitchKey = new Map();
+      const nodeBySwitchKey = new Map();
+
+      const registerSwitch3D = (node, pos3d) => {
+        if (!node || !pos3d) return;
+        if (node.key) {
+          posBySwitchKey.set(node.key, pos3d);
+          nodeBySwitchKey.set(node.key, node);
+        }
+        if (node.id) {
+          posBySwitchKey.set(node.id, pos3d);
+          nodeBySwitchKey.set(node.id, node);
+        }
+      };
+
+      registerSwitch3D(coreNode, positions.corePos);
+      registerSwitch3D(mcoreNode, positions.mcorePos);
+      registerSwitch3D(hcoreNode, positions.hcorePos);
+      registerSwitch3D(wlNode, positions.wlPos);
+      registerSwitch3D(workStudyNode, positions.wsPos);
+      for (const item of positions.additionalSwitchPositions) {
+        registerSwitch3D(item.sw, item.pos);
+      }
+
+      // Group all switchLinks by unordered pair of switch keys so redundant links (e.g. Hu1/0/49 + Hu2/0/49) are bundled or shown cleanly
+      const pairBundles = new Map();
       for (const lnk of globalGraph.switchLinks || []) {
-        if (!linksByTargetKey.has(lnk.targetKey)) linksByTargetKey.set(lnk.targetKey, []);
-        linksByTargetKey.get(lnk.targetKey).push(lnk);
-        if (!linksByTargetKey.has(lnk.sourceKey)) linksByTargetKey.set(lnk.sourceKey, []);
-        linksByTargetKey.get(lnk.sourceKey).push({
-          ...lnk,
-          sourceHostname: lnk.targetHostname,
-          sourcePort: lnk.targetPort,
-          targetHostname: lnk.sourceHostname,
-          targetPort: lnk.sourcePort
-        });
+        const sKey = lnk.sourceKey;
+        const tKey = lnk.targetKey;
+        if (!posBySwitchKey.has(sKey) || !posBySwitchKey.has(tKey)) continue;
+        // Skip links already drawn in explicit sections 1 & 2 (wlNode <-> coreNode and wlNode <-> workStudyNode)
+        if (
+          (sKey === wlNode?.key && tKey === coreNode?.key) ||
+          (sKey === coreNode?.key && tKey === wlNode?.key) ||
+          (sKey === wlNode?.key && tKey === workStudyNode?.key) ||
+          (sKey === workStudyNode?.key && tKey === wlNode?.key)
+        ) {
+          continue;
+        }
+        const pairId = sKey < tKey ? `${sKey}:::${tKey}` : `${tKey}:::${sKey}`;
+        if (!pairBundles.has(pairId)) {
+          pairBundles.set(pairId, []);
+        }
+        pairBundles.get(pairId).push(lnk);
       }
 
       const showAllSwitchConduits =
         positions.additionalSwitchPositions.length <= 24 || showLinkBadges;
 
-      positions.additionalSwitchPositions.forEach(({ sw, pos }, idx) => {
-        const isSelectedSwitch = activeEntity?.id === sw.id;
-        const isCoreOrBan = sw.buildingCode === 'CORE' || sw.buildingCode === 'BAN';
-        if (!showAllSwitchConduits && !isSelectedSwitch && !isCoreOrBan && !sw.isPolled) {
-          return;
+      let bundleIdx = 0;
+      for (const [pairId, links] of pairBundles.entries()) {
+        const primary = links[0];
+        const sNode = nodeBySwitchKey.get(primary.sourceKey);
+        const tNode = nodeBySwitchKey.get(primary.targetKey);
+        const sPos = posBySwitchKey.get(primary.sourceKey);
+        const tPos = posBySwitchKey.get(primary.targetKey);
+        if (!sNode || !tNode || !sPos || !tPos) continue;
+
+        const isSelectedEndpoint =
+          activeEntity?.id === sNode.id || activeEntity?.id === tNode.id;
+        const bothPolled = Boolean(sNode.isPolled && tNode.isPolled);
+        const involvesDc9500 =
+          /DC1-9500|DC1-2-9500|DC2-9500/i.test(sNode.hostname || '') ||
+          /DC1-9500|DC1-2-9500|DC2-9500/i.test(tNode.hostname || '');
+        const isCoreOrBanPeer =
+          (sNode.buildingCode === 'CORE' && tNode.buildingCode === 'CORE') ||
+          sNode.buildingCode === 'BAN' ||
+          tNode.buildingCode === 'BAN';
+
+        // Always show:
+        // 1) All switch-to-switch interconnects from DC1-9500 and DC1-2-9500 (both to tcore-9600 and to their 26 downstream Metro switches!)
+        // 2) All Polled-to-Polled (SQL <-> SQL) switch trunks
+        // 3) All Core/DC & Bancroft switch trunks
+        // 4) Any link connected to the currently selected switch, or all links when Trunks: On
+        if (
+          !involvesDc9500 &&
+          !bothPolled &&
+          !isCoreOrBanPeer &&
+          !isSelectedEndpoint &&
+          !showAllSwitchConduits
+        ) {
+          continue;
         }
 
-        const isFlorham = sw.siteCode === 'Florham';
-        const parentCore = isFlorham ? mcoreNode : coreNode;
-        const parentCorePos = isFlorham ? positions.mcorePos : positions.corePos;
-        if (!parentCore) return;
+        const isMeraki =
+          /MS350|MERAKI/i.test(`${sNode.model} ${sNode.hostname}`) ||
+          /MS350|MERAKI/i.test(`${tNode.model} ${tNode.hostname}`);
+        const linkColor = bothPolled
+          ? '#10b981'
+          : involvesDc9500
+          ? isMeraki
+            ? '#06b6d4'
+            : '#38bdf8'
+          : isCoreOrBanPeer
+          ? '#a855f7'
+          : '#f97316';
 
-        const matchedLinks = linksByTargetKey.get(sw.key) || [];
-        const primary = matchedLinks[0];
-        const isMeraki = /MS350|MERAKI/i.test(`${sw.model} ${sw.hostname}`);
-        const isCorePeer = sw.hierarchyTier === 1 || /C9500|C9600|N77/i.test(sw.model || '');
-        const linkColor = isCorePeer ? '#a855f7' : isMeraki ? '#06b6d4' : '#f97316';
-        const srcPort = primary?.sourcePort || 'Tw1/2/0/x';
-        const dstPort = primary?.targetPort || 'Tw1/1/1';
-        const dualSuffix =
-          matchedLinks.length > 1 ? ` (+${matchedLinks.length - 1} Redundant Trunk)` : '';
+        // If both switches are Polled (e.g. tcore-9600 <-> DC1-9500 or tcore-9600 <-> DC1-2-9500), render each physical 100G trunk tube!
+        if (bothPolled && links.length > 1) {
+          links.forEach((lnk, lIdx) => {
+            const offset = (lIdx - (links.length - 1) / 2) * 0.42;
+            list.push({
+              id: `polled-trunk-${pairId}-${lIdx}`,
+              isPrimaryTrunk: true,
+              verified: true,
+              color: lIdx % 2 === 0 ? '#10b981' : '#34d399',
+              radius: 0.095,
+              badgeTitle: `100G TRUNK #${lIdx + 1}: ${lnk.sourceHostname.replace(/\.net\.fdu\.edu$/i, '')} (${lnk.sourcePort}) ↔ ${lnk.targetHostname.replace(/\.net\.fdu\.edu$/i, '')} (${lnk.targetPort})`,
+              badgeSubtitle: `Bi-Directionally Verified SQL Switch Interconnect • ${lnk.mediaLabel || '100G QSFP28 Fiber'}`,
+              sourceHostname: lnk.sourceHostname,
+              sourcePort: lnk.sourcePort,
+              targetHostname: lnk.targetHostname,
+              targetPort: lnk.targetPort,
+              speed: /^Hu/i.test(lnk.sourcePort) ? '100G QSFP28 Fiber' : '25G SFP28 Fiber',
+              nativeVlan: lnk.nativeVlan || '1',
+              allowedVlans: lnk.allowedVlans || 'All Campus VLANs',
+              startPos: [sPos[0] + offset, 1.15 + lIdx * 0.18, sPos[2] + 0.6],
+              endPos: [tPos[0] + offset, 0.85 + lIdx * 0.14, tPos[2] + 0.6]
+            });
+          });
+        } else {
+          const portPairsText = links
+            .map((l) => `${l.sourcePort}↔${l.targetPort}`)
+            .join(', ');
+          const dualSuffix =
+            links.length > 1 ? ` (${links.length}× Redundant Links: ${portPairsText})` : '';
+          const bldgTag =
+            tNode.buildingCode && tNode.buildingCode !== 'CORE'
+              ? tNode.buildingCode
+              : sNode.buildingCode || 'CORE';
 
-        list.push({
-          id: `core-to-${sw.id}`,
-          isPrimaryTrunk: isSelectedSwitch,
-          verified: sw.isPolled,
-          color: linkColor,
-          radius: isSelectedSwitch ? 0.095 : 0.06,
-          badgeTitle: `[${sw.buildingCode}] ${srcPort} ↔ ${dstPort}${dualSuffix}`,
-          badgeSubtitle: `${parentCore.hostname} ↔ ${sw.hostname} (${sw.model})`,
-          sourceHostname: parentCore.hostname,
-          sourcePort: srcPort,
-          targetHostname: sw.hostname,
-          targetPort: dstPort,
-          speed: /^Hu/i.test(srcPort) ? '100G QSFP28 Fiber' : '25G SFP28 Fiber',
-          nativeVlan: primary?.nativeVlan || '1',
-          allowedVlans: primary?.allowedVlans || 'All Campus VLANs',
-          startPos: [
-            parentCorePos[0] + (((idx % 7) - 3) * 0.25),
-            1.15 + ((idx % 5) * 0.14),
-            parentCorePos[2] + 1.1
-          ],
-          endPos: [pos[0] + 1.15, 0.56, pos[2] + 0.9]
-        });
-      });
+          list.push({
+            id: `sw-link-${pairId}`,
+            isPrimaryTrunk: isSelectedEndpoint || bothPolled,
+            verified: bothPolled || primary.bidirectionalVerified,
+            color: linkColor,
+            radius: isSelectedEndpoint || bothPolled ? 0.09 : involvesDc9500 ? 0.072 : 0.06,
+            badgeTitle: `[${bldgTag}] ${primary.sourceHostname.replace(/\.net\.fdu\.edu$/i, '')} (${primary.sourcePort}) ↔ ${primary.targetHostname.replace(/\.net\.fdu\.edu$/i, '')} (${primary.targetPort})${dualSuffix}`,
+            badgeSubtitle: `${sNode.hostname} (${sNode.model}) ↔ ${tNode.hostname} (${tNode.model})${primary.portDescription ? ` • Desc: ${primary.portDescription}` : ''}`,
+            sourceHostname: primary.sourceHostname,
+            sourcePort: portPairsText || primary.sourcePort,
+            targetHostname: primary.targetHostname,
+            targetPort: primary.targetPort,
+            speed: /^Hu/i.test(primary.sourcePort) ? '100G QSFP28 Fiber' : '25G SFP28 Fiber',
+            nativeVlan: primary.nativeVlan || '1',
+            allowedVlans: primary.allowedVlans || 'All Campus VLANs',
+            startPos: [
+              sPos[0] + (((bundleIdx % 7) - 3) * 0.22),
+              0.92 + ((bundleIdx % 5) * 0.11),
+              sPos[2] + 0.75
+            ],
+            endPos: [tPos[0] + 0.4, 0.58, tPos[2] + 0.65]
+          });
+        }
+        bundleIdx += 1;
+      }
     }
 
     // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL exact front-panel RJ-45 ports
@@ -2779,7 +2889,7 @@ export default function MultiDevice3DTopologyScene({
         >
           <Canvas shadows dpr={[1, 2]}>
             <color attach="background" args={[bgColor]} />
-            <fog attach="fog" args={[bgColor, 75, 220]} />
+            <fog attach="fog" args={[bgColor, 110, 290]} />
 
             <PerspectiveCamera makeDefault position={[-16, 21, 25]} fov={38} />
             <TopologyCameraRig
@@ -2793,7 +2903,7 @@ export default function MultiDevice3DTopologyScene({
               dampingFactor={0.07}
               maxPolarAngle={Math.PI / 2 - 0.03}
               minDistance={4}
-              maxDistance={175}
+              maxDistance={230}
             />
 
             {/* Studio Architectural & Hardware Faceplate Lighting */}
@@ -2818,7 +2928,7 @@ export default function MultiDevice3DTopologyScene({
                 rotation={[-Math.PI / 2, 0, 0]}
                 onPointerMove={handleFloorPointerMove3D}
               >
-                <planeGeometry args={[260, 260]} />
+                <planeGeometry args={[340, 340]} />
                 <meshBasicMaterial transparent opacity={0} depthWrite={false} />
               </mesh>
             )}
@@ -2826,14 +2936,14 @@ export default function MultiDevice3DTopologyScene({
             {/* Blueprint Engineering Floor Grid */}
             <Grid
               position={[0, -0.18, 12]}
-              args={[220, 220]}
+              args={[300, 300]}
               cellSize={1.5}
               cellThickness={0.6}
               cellColor="#1e3a5f"
               sectionSize={6}
               sectionThickness={1.2}
               sectionColor="#0284c7"
-              fadeDistance={210}
+              fadeDistance={280}
               fadeStrength={1.2}
             />
 

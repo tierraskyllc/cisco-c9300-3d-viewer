@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import CiscoChassis3D from './components/CiscoChassis3D';
 import MultiDevice3DTopologyScene from './components/MultiDevice3DTopologyScene';
 import TopologyViewer from './components/TopologyViewer';
+import SwitchGroupDirectoryTable from './components/SwitchGroupDirectoryTable';
 import ControlPanel from './components/ControlPanel';
 import ShowCommandUploader from './components/ShowCommandUploader';
 import LeftNavInventoryDrawer from './components/LeftNavInventoryDrawer';
@@ -10,6 +11,11 @@ import {
   LED_MODES,
   getPortCountForModel
 } from './data/c9300HardwareData';
+import {
+  SWITCH_GROUP_OVERRIDES_STORAGE_KEY,
+  API_SWITCH_GROUP_OVERRIDES_ENDPOINT,
+  getStoredSwitchGroupOverrides
+} from './data/globalNetworkData';
 import {
   correlateSwitchShowData,
   SAMPLE_CAMPUS_SHOW_OUTPUTS
@@ -43,11 +49,41 @@ export default function App() {
   // Core Switch Configuration & Navigation Drawer State
   const [switchModelId, setSwitchModelId] = useState('C9300-48U');
   const [networkModuleId, setNetworkModuleId] = useState('C9300-NM-8X');
-  const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | '3d' | 'topology'
+  const [viewMode, setViewMode] = useState('multi-3d'); // 'multi-3d' | 'switch-table' | '3d' | 'topology'
   const [isLeftNavOpen, setIsLeftNavOpen] = useState(true);
   const [isRightInspectorOpen, setIsRightInspectorOpen] = useState(false);
   const [selectedInventoryEntity, setSelectedInventoryEntity] = useState(null);
   const [cameraPreset, setCameraPreset] = useState('isometric');
+
+  // Switch & Building Group Overrides (persisted to PostgreSQL + localStorage)
+  const [switchGroupOverrides, setSwitchGroupOverrides] = useState(() =>
+    getStoredSwitchGroupOverrides()
+  );
+
+  const handleUpdateSwitchGroupOverrides = async (nextOverrides) => {
+    const safeOverrides = {
+      customGroups: nextOverrides?.customGroups || {},
+      assignments: nextOverrides?.assignments || {}
+    };
+    setSwitchGroupOverrides(safeOverrides);
+    try {
+      localStorage.setItem(
+        SWITCH_GROUP_OVERRIDES_STORAGE_KEY,
+        JSON.stringify(safeOverrides)
+      );
+    } catch {
+      // ignore storage quota errors
+    }
+    try {
+      await fetch(API_SWITCH_GROUP_OVERRIDES_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ payload: safeOverrides })
+      });
+    } catch {
+      // localStorage fallback already saved
+    }
+  };
 
   // Building & Device Visibility Filtering (defaults to true so all tcore-9600 CDP switches are immediately visible, with 1-click filtering by Building or Polled-only)
   const [selectedBuildingFilter, setSelectedBuildingFilter] = useState('ALL');
@@ -88,12 +124,33 @@ export default function App() {
     fan3: false
   });
 
-  // Load saved devices & server LAN IP from PostgreSQL API on mount
+  // Load saved devices, server LAN IP & switch group overrides from PostgreSQL API on mount
   useEffect(() => {
     fetch('/api/health')
       .then((r) => r.json())
       .then((h) => {
         if (h.serverLanIp) setServerLanIp(h.serverLanIp);
+      })
+      .catch(() => {});
+
+    fetch(API_SWITCH_GROUP_OVERRIDES_ENDPOINT)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.payload && typeof data.payload === 'object') {
+          const safe = {
+            customGroups: data.payload.customGroups || {},
+            assignments: data.payload.assignments || {}
+          };
+          setSwitchGroupOverrides(safe);
+          try {
+            localStorage.setItem(
+              SWITCH_GROUP_OVERRIDES_STORAGE_KEY,
+              JSON.stringify(safe)
+            );
+          } catch {
+            // ignore
+          }
+        }
       })
       .catch(() => {});
 
@@ -249,7 +306,11 @@ export default function App() {
     setViewMode(nextMode);
     if (nextMode === '3d') {
       setIsRightInspectorOpen(true);
-    } else if (nextMode === 'multi-3d' || nextMode === 'topology') {
+    } else if (
+      nextMode === 'multi-3d' ||
+      nextMode === 'switch-table' ||
+      nextMode === 'topology'
+    ) {
       setIsRightInspectorOpen(false);
     }
   };
@@ -307,6 +368,7 @@ export default function App() {
         onChangeViewMode={handleViewModeChange}
         parsedSwitchData={parsedSwitchData}
         savedDevices={savedDevices}
+        switchGroupOverrides={switchGroupOverrides}
         onSelectSavedDevice={handleSelectSavedDevice}
         switchModelId={switchModelId}
         onModelChange={handleModelChange}
@@ -344,6 +406,7 @@ export default function App() {
               <MultiDevice3DTopologyScene
                 parsedSwitchData={parsedSwitchData}
                 savedDevices={savedDevices}
+                switchGroupOverrides={switchGroupOverrides}
                 onSelectSavedDevice={handleSelectSavedDevice}
                 onPollNeighbor={handleOpenLivePoll}
                 onSwitchToSingleChassis3D={() => {
@@ -357,6 +420,25 @@ export default function App() {
                 onSelectBuildingFilter={setSelectedBuildingFilter}
                 showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
                 hiddenDeviceKeys={hiddenDeviceKeys}
+              />
+            </div>
+          )}
+
+          {/* =====================================================
+              MODE 2: SWITCH & BUILDING GROUP DIRECTORY TABLE VIEW
+             ===================================================== */}
+          {viewMode === 'switch-table' && (
+            <div className="flex-1 min-h-0">
+              <SwitchGroupDirectoryTable
+                savedDevices={savedDevices}
+                parsedSwitchData={parsedSwitchData}
+                switchGroupOverrides={switchGroupOverrides}
+                onUpdateSwitchGroupOverrides={handleUpdateSwitchGroupOverrides}
+                onPollSwitch={handleOpenLivePoll}
+                onJumpTo3DBuilding={(bCode) => {
+                  setSelectedBuildingFilter(bCode || 'ALL');
+                  setViewMode('multi-3d');
+                }}
               />
             </div>
           )}
