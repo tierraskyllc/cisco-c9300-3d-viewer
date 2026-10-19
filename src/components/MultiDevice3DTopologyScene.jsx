@@ -1,4 +1,4 @@
-import React, { useRef, useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useMemo, useEffect, useLayoutEffect, useCallback } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -732,9 +732,17 @@ function CoreChassis9606R3D({
   );
 }
 
+// Shared 3D Geometries for the 300-Switch Multi-Device Campus Scene (prevents VRAM exhaustion & WebGL context loss)
+const SHARED_PEDESTAL_GEOM = new THREE.BoxGeometry(3.75, 0.32, 2.55);
+const SHARED_COMPACT_CHASSIS_GEOM = new THREE.BoxGeometry(3.48, 0.44, 2.28);
+const SHARED_FACEPLATE_STRIP_GEOM = new THREE.BoxGeometry(2.35, 0.28, 0.04);
+const SHARED_UPLINK_BAY_GEOM = new THREE.BoxGeometry(0.68, 0.28, 0.04);
+const SHARED_TOP_BAR_GEOM = new THREE.BoxGeometry(3.1, 0.02, 1.8);
+const SHARED_SWITCH_HALO_GEOM = new THREE.RingGeometry(2.35, 2.65, 32);
+
 /**
  * Realistic 3D Cisco Catalyst C9300 Switch Chassis inside the Multi-Device Topology Scene
- * Uses the exact same 3D hardware assembly as the Single-Chassis 3D view!
+ * Uses the exact same 3D hardware assembly for polled/active switches and a fast GPU-shared 1RU rack chassis for unpolled CDP neighbors!
  */
 function SwitchC9300Node3D({
   deviceId,
@@ -774,7 +782,8 @@ function SwitchC9300Node3D({
   const showFullDetails =
     hovered || isSelected || isDragging || labelMode === 'all' || labelMode === 'switches';
 
-  const renderFullChassis = !useCompactMesh || hovered || isSelected || isActiveChassis || node.isPolled;
+  // Never swap mesh geometry on hover/select when 300+ switches are in the scene — prevents WebGL shader compilation stalls & black screen flashes!
+  const renderFullChassis = !useCompactMesh || isActiveChassis || node.isPolled;
 
   return (
     <group
@@ -797,15 +806,17 @@ function SwitchC9300Node3D({
     >
       {/* Selection / Active / Drag Halo on Floor */}
       {(isSelected || hovered || isActiveChassis || isDragging) && (
-        <mesh position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-          <ringGeometry args={[2.35, 2.65, 36]} />
+        <mesh
+          geometry={SHARED_SWITCH_HALO_GEOM}
+          position={[0, 0.04, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
           <meshBasicMaterial color={isDragging || isSelected ? '#ffffff' : accentColor} />
         </mesh>
       )}
 
       {/* Sleek Rack Pedestal Under the Real 3D C9300 Chassis */}
-      <mesh position={[0, 0.16, 0]}>
-        <boxGeometry args={[3.75, 0.32, 2.55]} />
+      <mesh geometry={SHARED_PEDESTAL_GEOM} position={[0, 0.16, 0]}>
         <meshStandardMaterial color="#091326" metalness={0.45} roughness={0.55} />
       </mesh>
 
@@ -833,28 +844,31 @@ function SwitchC9300Node3D({
           />
         </group>
       ) : (
-        /* High-Speed 3D 1RU Rack Switch Enclosure for 150-Switch Campus View (Upgrades to Full 48-Port Assembly on Hover/Click) */
+        /* High-Speed Shared-Geometry 3D 1RU Rack Switch Enclosure for 300-Switch Campus View */
         <group position={[0, 0.56, 0]}>
-          <RoundedBox args={[3.48, 0.44, 2.28]} radius={0.05} smoothness={2}>
+          <mesh geometry={SHARED_COMPACT_CHASSIS_GEOM}>
             <meshStandardMaterial
-              color={isMeraki ? '#1e293b' : '#334155'}
+              color={
+                isSelected || hovered
+                  ? '#3b82f6'
+                  : isMeraki
+                  ? '#1e293b'
+                  : '#334155'
+              }
               metalness={0.68}
               roughness={0.32}
             />
-          </RoundedBox>
+          </mesh>
           {/* Front Metallic Port Faceplate Strip */}
-          <mesh position={[-0.35, 0, 1.15]}>
-            <boxGeometry args={[2.35, 0.28, 0.04]} />
+          <mesh geometry={SHARED_FACEPLATE_STRIP_GEOM} position={[-0.35, 0, 1.15]}>
             <meshStandardMaterial color="#0f172a" metalness={0.5} roughness={0.4} />
           </mesh>
           {/* Uplink SFP28 Bay Accent */}
-          <mesh position={[1.22, 0, 1.15]}>
-            <boxGeometry args={[0.68, 0.28, 0.04]} />
+          <mesh geometry={SHARED_UPLINK_BAY_GEOM} position={[1.22, 0, 1.15]}>
             <meshBasicMaterial color={accentColor} />
           </mesh>
           {/* Top Building Color Identification Bar */}
-          <mesh position={[0, 0.23, 0]}>
-            <boxGeometry args={[3.1, 0.02, 1.8]} />
+          <mesh geometry={SHARED_TOP_BAR_GEOM} position={[0, 0.23, 0]}>
             <meshBasicMaterial color={accentColor} />
           </mesh>
         </group>
@@ -1341,7 +1355,17 @@ export default function MultiDevice3DTopologyScene({
     }
   }, []);
 
-  // Finalize 3D drag on pointerup anywhere: reset temporary GPU delta and commit once to React state + SQL
+  // Synchronously zero out temporary GPU group offsets at the exact moment React commits the updated layout3D coordinates
+  useLayoutEffect(() => {
+    for (const grp of Object.values(padGroupRefs.current)) {
+      if (grp) grp.position.set(0, 0, 0);
+    }
+    for (const grp of Object.values(deviceGroupRefs.current)) {
+      if (grp) grp.position.set(0, 0, 0);
+    }
+  }, [layout3D]);
+
+  // Finalize 3D drag on pointerup anywhere: commit once to React state + SQL
   useEffect(() => {
     if (!active3DDrag) return;
     const handleWindowPointerUp = () => {
@@ -1351,17 +1375,16 @@ export default function MultiDevice3DTopologyScene({
       setActive3DDrag(null);
       if (!current) return;
 
-      if (current.kind === 'pad') {
-        const grp = padGroupRefs.current[current.id];
-        if (grp) grp.position.set(0, 0, 0);
-      } else if (current.kind === 'device') {
-        const grp = deviceGroupRefs.current[current.id];
-        if (grp) grp.position.set(0, 0, 0);
-      }
-
-      if (!current.moved && current.kind === 'device' && current.onClickCallback) {
-        current.onClickCallback();
-      } else if (current.moved) {
+      if (!current.moved) {
+        if (current.kind === 'pad') {
+          const grp = padGroupRefs.current[current.id];
+          if (grp) grp.position.set(0, 0, 0);
+        } else if (current.kind === 'device') {
+          const grp = deviceGroupRefs.current[current.id];
+          if (grp) grp.position.set(0, 0, 0);
+          if (current.onClickCallback) current.onClickCallback();
+        }
+      } else {
         setLayout3D((prev) => {
           const nextLayout =
             current.kind === 'pad'
