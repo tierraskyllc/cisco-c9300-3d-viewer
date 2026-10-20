@@ -264,11 +264,13 @@ export function inferSiteCode(hostnameOrObj = '', rawSiteName = '') {
     h.startsWith('F-') ||
     h.startsWith('FCORE') ||
     h.startsWith('DC2-') ||
+    h.startsWith('DC-2-') ||
     h.startsWith('FLO-') ||
     h.includes('FLOR') ||
     h.includes('MADISON') ||
-    /\b129\.\d+\b/.test(h) ||
-    String(mgmtIp).startsWith('132.238.129.')
+    /\b(?:129|133|136|140)\.\d+\b/.test(h) ||
+    /^132\.238\.(?:129|133|136|140)\./.test(String(mgmtIp)) ||
+    /^10\.240\.133\./.test(String(mgmtIp))
   ) {
     return 'Florham';
   }
@@ -702,7 +704,7 @@ export function buildGlobalAndSiteTopology(
     const normHost = normalizeHostname(hostname);
     const model = snap.device?.model || dev.model || 'C9300';
     const mgmtIp = snap.device?.mgmtIp || dev.mgmt_ip || '—';
-    const siteCode = inferSiteCode(hostname, dev.site_name);
+    const siteCode = inferSiteCode({ hostname, siteName: dev.site_name, mgmtIp });
     const ports = snap.ports48 || [];
     const uplinks = snap.uplinkInterfaces || [];
     const connectedPorts =
@@ -820,7 +822,11 @@ export function buildGlobalAndSiteTopology(
       const isSwitchOrRouter = !isEndpoint;
 
       if (!targetNode) {
-        const inferredSite = inferSiteCode(`${targetRawHost} ${portDesc}`, sourceNode.siteCode);
+        const inferredSite = inferSiteCode({
+          hostname: `${targetRawHost} ${portDesc}`,
+          siteName: sourceNode.siteCode,
+          mgmtIp: cdp.neighborIp
+        });
         targetNode = nodesByKey.get(targetNorm);
         if (!targetNode) {
           const cleanPlatform = cdp.platform

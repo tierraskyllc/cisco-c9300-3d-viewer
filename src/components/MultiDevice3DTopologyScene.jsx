@@ -2528,8 +2528,8 @@ export default function MultiDevice3DTopologyScene({
           activeEntity?.id === sNode.id || activeEntity?.id === tNode.id;
         const bothPolled = Boolean(sNode.isPolled && tNode.isPolled);
         const involvesDc9500 =
-          /DC1-9500|DC1-2-9500|DC2-9500/i.test(sNode.hostname || '') ||
-          /DC1-9500|DC1-2-9500|DC2-9500/i.test(tNode.hostname || '');
+          /DC1-.*9500|DC2-.*9500|C9500/i.test(`${sNode.hostname || ''} ${sNode.model || ''}`) ||
+          /DC1-.*9500|DC2-.*9500|C9500/i.test(`${tNode.hostname || ''} ${tNode.model || ''}`);
         const isCoreOrBanPeer =
           (sNode.buildingCode === 'CORE' && tNode.buildingCode === 'CORE') ||
           sNode.buildingCode === 'BAN' ||
