@@ -3218,7 +3218,7 @@ export default function MultiDevice3DTopologyScene({
           {/* Canvas Movement (✋ Open Hand) vs. Canvas Panning (✊ Gripping Hand) Toggle */}
           <div
             className="flex items-center gap-0.5 bg-slate-900/95 p-0.5 rounded-lg border border-slate-700/90"
-            title="Select what Right-Click & Left-Click dragging on the 3D canvas does: ✋ Move/Orbit Canvas vs. ✊ Pan Canvas"
+            title="Select what Right-Click & Left-Click dragging on the 3D canvas does: ✋ Move Layout vs. ✊ Pan / Orbit 3D Camera"
           >
             <button
               type="button"
@@ -3228,7 +3228,7 @@ export default function MultiDevice3DTopologyScene({
                   ? 'bg-sky-500/25 text-sky-200 border border-sky-400/60 shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="✋ Layout Movement (Orbit / Rotate 3D Canvas with Right-Click or Left-Click)"
+              title="✋ Layout Movement (Slide / Move the 3D Layout across the screen with Right-Click or Left-Click)"
             >
               <span aria-hidden="true">✋</span>
               <span className="text-[10px]">Move</span>
@@ -3241,7 +3241,7 @@ export default function MultiDevice3DTopologyScene({
                   ? 'bg-sky-500/25 text-sky-200 border border-sky-400/60 shadow'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="✊ Canvas Panning (Pan laterally across 3D Canvas with Right-Click or Left-Click)"
+              title="✊ Camera Panning (Orbit / Tilt the 3D Camera angle with Right-Click or Left-Click)"
             >
               <span aria-hidden="true">✊</span>
               <span className="text-[10px]">Pan</span>
@@ -3473,9 +3473,9 @@ export default function MultiDevice3DTopologyScene({
               minDistance={4}
               maxDistance={230}
               mouseButtons={{
-                LEFT: canvasMouseMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+                LEFT: canvasMouseMode === 'move' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
                 MIDDLE: THREE.MOUSE.DOLLY,
-                RIGHT: canvasMouseMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
+                RIGHT: canvasMouseMode === 'move' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
               }}
             />
 
