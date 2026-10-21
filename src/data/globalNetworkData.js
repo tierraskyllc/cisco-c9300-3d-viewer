@@ -370,6 +370,7 @@ export const FDU_BUILDING_DIRECTORY = {
   LWN: 'The Lawn Residence Halls (LWN)',
   RIC: 'Rice Hall (RIC)',
   GAT: 'Gatehouse & Public Safety (GAT)',
+  GHB: 'Gatehouse Building (GHB)',
   BRN: 'Barn Theater & Fine Arts (BRN)',
   CHL: 'Chiller / Central Plant (CHL)',
   STAD: 'Robert Shields Stadium (STAD)',
@@ -741,7 +742,11 @@ export function buildGlobalAndSiteTopology(
       autoBuildingCode: bldgInfo.buildingCode,
       buildingLabel: bldgInfo.buildingLabel,
       autoBuildingLabel: bldgInfo.buildingLabel,
-      buildingName: dev.building_name || bldgInfo.buildingLabel,
+      buildingName:
+        dev.building_name &&
+        !(bldgInfo.buildingCode !== 'BAN' && /Bancroft Hall/i.test(dev.building_name))
+          ? dev.building_name
+          : bldgInfo.buildingLabel,
       isPolled: true,
       isSwitchNode: true,
       nodeRole,
@@ -921,6 +926,8 @@ export function buildGlobalAndSiteTopology(
             localPort,
             remotePort,
             poeWatts: cdp.powerWatts || 0,
+            upstreamSwitch: sourceNode.hostname,
+            upstreamSwitchId: sourceNode.id,
             buildingCode: sourceNode.buildingCode || 'BAN',
             buildingLabel: sourceNode.buildingLabel || FDU_BUILDING_DIRECTORY.BAN
           });

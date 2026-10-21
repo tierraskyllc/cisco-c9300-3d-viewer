@@ -2012,11 +2012,6 @@ export default function MultiDevice3DTopologyScene({
     return Object.values(map).sort((a, b) => b.switches.length - a.switches.length);
   }, [globalGraph.switchNodes]);
 
-  const attachedAps = useMemo(() => {
-    if (!wlNode) return [];
-    return wlNode.attachedEndpoints || [];
-  }, [wlNode]);
-
   // Compute live 3D Coordinates matching the FDU-CAMPUSES.drawio Spatial Layout:
   // - Top-Left: V-CORE (Vancouver Canada) + V-FG1/2 + ASA ASR + 2x NCS + 2x CA ISP
   // - Top-Right: H-CORE (165 Halsey US Colo) + FG-1/2 + NCS-5504 + Fort D-1/2 + 2x US ISP
@@ -2047,20 +2042,6 @@ export default function MultiDevice3DTopologyScene({
       +(coloPadCfg.cz + hcoreDz).toFixed(2)
     ];
     const vcorePos = [vancPadCfg.cx, 0.2, +(vancPadCfg.cz + 2.8).toFixed(2)];
-
-    // 7 Wi-Fi 6 APs arranged on the Access Point Zone Pad (only mounted when visible APs exist)
-    const apPositions = attachedAps.slice(0, 7).map((ap, idx) => {
-      const deviceId = `ap-${idx}`;
-      const defDev = DEFAULT_3D_LAYOUT.devices[deviceId] || { dx: 0, dz: 0, padId: 'apZone' };
-      return {
-        deviceId,
-        padId: 'apZone',
-        defaultDx: defDev.dx,
-        defaultDz: defDev.dz,
-        ap,
-        pos: getPos(deviceId)
-      };
-    });
 
     // 1. Separate additionalSwitches into:
     //    - florhamCorePeers (buildingCode === 'CORE' && siteCode === 'Florham' -> placed onto mcoreZone)
@@ -2196,7 +2177,7 @@ export default function MultiDevice3DTopologyScene({
       d: expandedMcoreD
     };
 
-    // Helper to size and arrange a campus's Building Bases into a clean 3-column grid south of its Campus Core!
+    // Helper to size and arrange a campus's Building Bases (and any attached Wi-Fi 6 APs on their switches) into a clean 3-column grid south of its Campus Core!
     const layoutCampusBuildingGrid = (buildingGroups, anchorCenterX, startTopZ, campusTag) => {
       const sorted = Array.from(buildingGroups.values()).sort(
         (a, b) => b.switches.length - a.switches.length
@@ -2207,9 +2188,51 @@ export default function MultiDevice3DTopologyScene({
         const rows = Math.max(1, Math.ceil(cnt / cols));
         const colSpacing = 4.1;
         const rowSpacing = 2.9;
-        const w = Math.max(6.4, +(cols * colSpacing + 2.3).toFixed(2));
-        const d = Math.max(4.4, +(rows * rowSpacing + 2.3).toFixed(2));
-        return { ...grp, cols, rows, colSpacing, rowSpacing, w, d };
+
+        const bldgAps = [];
+        grp.switches.forEach((sw) => {
+          (sw.attachedEndpoints || []).forEach((ap, apIdx) => {
+            bldgAps.push({
+              ap,
+              parentSwitch: sw,
+              deviceId: `ap-${sw.id}-${ap.localPort || apIdx}`
+            });
+          });
+        });
+
+        const apCnt = bldgAps.length;
+        const apCols = apCnt === 0 ? 0 : apCnt <= 4 ? apCnt : 4;
+        const apRows = apCnt > 0 ? Math.ceil(apCnt / apCols) : 0;
+        const apColSpacing = 3.6;
+        const apRowSpacing = 2.55;
+
+        const w = Math.max(
+          6.4,
+          +(cols * colSpacing + 2.3).toFixed(2),
+          apCnt > 0 ? +(apCols * apColSpacing + 2.6).toFixed(2) : 0
+        );
+        const d = Math.max(
+          4.4,
+          +(
+            rows * rowSpacing +
+            (apRows > 0 ? apRows * apRowSpacing + 1.4 : 0) +
+            2.3
+          ).toFixed(2)
+        );
+        return {
+          ...grp,
+          cols,
+          rows,
+          colSpacing,
+          rowSpacing,
+          bldgAps,
+          apCols,
+          apRows,
+          apColSpacing,
+          apRowSpacing,
+          w,
+          d
+        };
       });
 
       const gridCols = 3;
@@ -2237,6 +2260,7 @@ export default function MultiDevice3DTopologyScene({
 
       const bases = [];
       const switchItems = [];
+      const apItems = [];
 
       colBuckets.forEach((bucket, colIdx) => {
         let cursorTopZ = startTopZ;
@@ -2252,9 +2276,12 @@ export default function MultiDevice3DTopologyScene({
           const cz = typeof savedPad?.cz === 'number' ? savedPad.cz : defaultCz;
           const theme = getBuildingBaseTheme(grp.code);
 
+          const switchBlockDepth = (grp.rows - 1) * grp.rowSpacing;
+          const apBlockDepth = grp.apRows > 0 ? grp.apRows * grp.apRowSpacing + 1.1 : 0;
           const startLocalX = -((grp.cols - 1) * grp.colSpacing) / 2;
-          const startLocalZ = -((grp.rows - 1) * grp.rowSpacing) / 2;
+          const startLocalZ = -((switchBlockDepth + apBlockDepth) / 2);
 
+          const switchPosById = new Map();
           const switchPositions = grp.switches.map((sw, idx) => {
             const col = idx % grp.cols;
             const row = Math.floor(idx / grp.cols);
@@ -2264,6 +2291,7 @@ export default function MultiDevice3DTopologyScene({
             const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
             const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
             const pos = [+(cx + dx).toFixed(2), 0.2, +(cz + dz).toFixed(2)];
+            switchPosById.set(sw.id, pos);
             const item = {
               sw,
               pos,
@@ -2279,9 +2307,43 @@ export default function MultiDevice3DTopologyScene({
             return item;
           });
 
-          // Auto-expand building base footprint if any child switch was dragged outward
-          const maxAbsDx = switchPositions.reduce((m, item) => Math.max(m, Math.abs(item.dx)), 0);
-          const maxAbsDz = switchPositions.reduce((m, item) => Math.max(m, Math.abs(item.dz)), 0);
+          const apStartLocalX = grp.apCols > 0 ? -((grp.apCols - 1) * grp.apColSpacing) / 2 : 0;
+          const apStartLocalZ = startLocalZ + switchBlockDepth + 2.75;
+
+          const bldgApPositions = (grp.bldgAps || []).map(({ ap, parentSwitch, deviceId }, idx) => {
+            const col = idx % grp.apCols;
+            const row = Math.floor(idx / grp.apCols);
+            const defaultDx = +(apStartLocalX + col * grp.apColSpacing).toFixed(2);
+            const defaultDz = +(apStartLocalZ + row * grp.apRowSpacing).toFixed(2);
+            const savedDev = layout3D.devices[deviceId];
+            const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
+            const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
+            const pos = [+(cx + dx).toFixed(2), 0.2, +(cz + dz).toFixed(2)];
+            const apItem = {
+              deviceId,
+              padId,
+              defaultDx,
+              defaultDz,
+              dx,
+              dz,
+              ap,
+              parentSwitch,
+              parentSwitchPos: switchPosById.get(parentSwitch.id) || [cx, 0.2, cz],
+              pos
+            };
+            apItems.push(apItem);
+            return apItem;
+          });
+
+          // Auto-expand building base footprint if any child switch or AP was dragged outward
+          const maxAbsDx = [...switchPositions, ...bldgApPositions].reduce(
+            (m, item) => Math.max(m, Math.abs(item.dx)),
+            0
+          );
+          const maxAbsDz = [...switchPositions, ...bldgApPositions].reduce(
+            (m, item) => Math.max(m, Math.abs(item.dz)),
+            0
+          );
           const expandedW = Math.max(grp.w, +(maxAbsDx * 2 + 4.8).toFixed(2));
           const expandedD = Math.max(grp.d, +(maxAbsDz * 2 + 3.8).toFixed(2));
 
@@ -2296,12 +2358,13 @@ export default function MultiDevice3DTopologyScene({
             d: expandedD,
             theme,
             switches: grp.switches,
-            switchPositions
+            switchPositions,
+            apPositions: bldgApPositions
           });
         });
       });
 
-      return { bases, switchItems };
+      return { bases, switchItems, apItems };
     };
 
     // 4a. Florham Campus Building Bases (South-West, directly below M-CORE)
@@ -2321,6 +2384,7 @@ export default function MultiDevice3DTopologyScene({
     );
 
     const buildingBases = [...florhamGrid.bases, ...metroGrid.bases];
+    const apPositions = [...florhamGrid.apItems, ...metroGrid.apItems];
     const allAdditionalSwitchPositions = [
       ...corePeerPositions,
       ...mcorePeerPositions,
@@ -2626,6 +2690,14 @@ export default function MultiDevice3DTopologyScene({
         defaultDz: item.defaultDz
       };
     });
+    apPositions.forEach((item) => {
+      deviceLayoutMetaById[item.ap.hostname] = {
+        deviceId: item.deviceId,
+        padId: item.padId,
+        defaultDx: item.defaultDx,
+        defaultDz: item.defaultDz
+      };
+    });
 
     return {
       corePos,
@@ -2651,7 +2723,6 @@ export default function MultiDevice3DTopologyScene({
       additionalSwitchPositions: allAdditionalSwitchPositions
     };
   }, [
-    attachedAps,
     layout3D,
     additionalSwitches,
     coreNode,
@@ -3077,31 +3148,31 @@ export default function MultiDevice3DTopologyScene({
       }
     }
 
-    // 3. 7 Wi-Fi 6 AP UPOE Conduits from T-BAN-2FL-WL exact front-panel RJ-45 ports
-    if (wlNode) {
-      positions.apPositions.forEach(({ ap, pos }, idx) => {
-        const m = String(ap.localPort || '').match(/\/(\d+)$/);
-        const portNum = m ? parseInt(m[1], 10) : idx + 1;
-        list.push({
-          id: `ap-link-${ap.localPort}`,
-          isPrimaryTrunk: false,
-          verified: false,
-          color: '#38bdf8',
-          radius: 0.055,
-          badgeTitle: `${ap.localPort} → ${ap.hostname}`,
-          badgeSubtitle: `${ap.model} • ${ap.ip} • ${ap.poeWatts}W UPOE`,
-          sourceHostname: 'T-BAN-2FL-WL',
-          sourcePort: ap.localPort,
-          targetHostname: ap.hostname,
-          targetPort: 'GigabitEthernet0',
-          speed: 'mGig UPOE (802.3bt)',
-          nativeVlan: '25',
-          allowedVlans: 'Access / Capwap',
-          startPos: getC9300PortWorldPos(positions.wlPos, portNum, true),
-          endPos: [pos[0], 0.3, pos[2]]
-        });
+    // 3. Wi-Fi 6 AP UPOE Conduits for ALL switches across ALL buildings (e.g. T-BAN-2FL-WL, M-BRN-118X-WL, etc.)
+    positions.apPositions.forEach(({ ap, pos, parentSwitch, parentSwitchPos }, idx) => {
+      const m = String(ap.localPort || '').match(/\/(\d+)$/);
+      const portNum = m ? parseInt(m[1], 10) : idx + 1;
+      const is24Port = (parentSwitch?.portCount || 24) === 24;
+      const srcHost = parentSwitch?.hostname || ap.upstreamSwitch || 'Switch';
+      list.push({
+        id: `ap-link-${parentSwitch?.id || 'sw'}-${ap.localPort}-${ap.hostname}`,
+        isPrimaryTrunk: false,
+        verified: false,
+        color: '#38bdf8',
+        radius: 0.055,
+        badgeTitle: `${srcHost} (${ap.localPort}) → ${ap.hostname}`,
+        badgeSubtitle: `${ap.model} • ${ap.ip} • ${ap.poeWatts}W UPOE`,
+        sourceHostname: srcHost,
+        sourcePort: ap.localPort,
+        targetHostname: ap.hostname,
+        targetPort: ap.remotePort || 'GigabitEthernet0',
+        speed: 'mGig UPOE (802.3bt)',
+        nativeVlan: '25',
+        allowedVlans: 'Access / Capwap',
+        startPos: getC9300PortWorldPos(parentSwitchPos || positions.wlPos, portNum, is24Port),
+        endPos: [pos[0], 0.3, pos[2]]
       });
-    }
+    });
 
     return list;
   }, [
@@ -3152,7 +3223,7 @@ export default function MultiDevice3DTopologyScene({
             { id: 'campus-wide', label: `Campus Fabric (${globalGraph.switchNodes.length})` },
             { id: 'metro-fabric', label: 'Core & Data Centers' },
             { id: 'switch-trunks', label: 'Trunks (A↔B)' },
-            { id: 'wifi-fleet', label: 'Wi-Fi 6 APs (7)' },
+            { id: 'wifi-fleet', label: `Wi-Fi 6 APs (${positions.apPositions.length})` },
             { id: 'top-blueprint', label: 'Top Plan (90°)' },
             { id: 'front-elevation', label: 'Front' }
           ].map((preset) => (
@@ -3844,11 +3915,15 @@ export default function MultiDevice3DTopologyScene({
 
             {/* ===============================================================
                 FLORHAM CAMPUS (SOUTH-WEST UNDER M-CORE) & METRO CAMPUS (SOUTH-EAST UNDER T-CORE)
-                INDIVIDUAL CAMPUS BUILDING BASES (INCLUDING BANCROFT HALL 'BAN')
+                INDIVIDUAL CAMPUS BUILDING BASES (WITH BOTH SWITCHES & ATTACHED WI-FI 6 APS)
                =============================================================== */}
             {positions.buildingBases.map((bldg) => {
               const useCompact = positions.additionalSwitchPositions.length > 18;
               const campusTag = bldg.siteCode === 'Florham' ? 'FLORHAM' : 'METRO';
+              const apSuffix =
+                bldg.apPositions?.length > 0
+                  ? ` • ${bldg.apPositions.length} AP${bldg.apPositions.length === 1 ? '' : 's'}`
+                  : '';
               return (
                 <group key={bldg.padId} ref={registerPadGroupRef(bldg.padId)}>
                   <ZonePlatform3D
@@ -3857,7 +3932,7 @@ export default function MultiDevice3DTopologyScene({
                     size={[bldg.w, 0.36, bldg.d]}
                     baseColor={bldg.theme.baseColor}
                     rimColor={bldg.theme.rimColor}
-                    title={`[${campusTag}] ${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'})`}
+                    title={`[${campusTag}] ${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'}${apSuffix})`}
                     subtitle={`Connected to ${bldg.siteCode === 'Florham' ? 'mcore-9600 (Florham)' : 'tcore-9600 (Metro)'} • Click Plaque to Filter ${bldg.code}`}
                     showZoneTitles={showZoneTitles}
                     isLocked={isPadLocked(bldg.padId)}
@@ -3908,56 +3983,29 @@ export default function MultiDevice3DTopologyScene({
                       />
                     </group>
                   ))}
+
+                  {(bldg.apPositions || []).map(({ deviceId, padId, defaultDx, defaultDz, ap, pos }) => (
+                    <group key={deviceId} ref={registerDeviceGroupRef(deviceId)}>
+                      <WirelessApNode3D
+                        deviceId={deviceId}
+                        padId={padId}
+                        defaultDx={defaultDx}
+                        defaultDz={defaultDz}
+                        ap={ap}
+                        position={pos}
+                        isSelected={activeEntity?.id === ap.hostname}
+                        isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
+                        isLocked={isDeviceLocked(deviceId)}
+                        onToggleDeviceLock={handleToggleDeviceLock}
+                        onSelect={handleSelectEntity}
+                        onStartDeviceDrag={handleStartDeviceDrag3D}
+                        labelMode={labelMode}
+                      />
+                    </group>
+                  ))}
                 </group>
               );
             })}
-
-            {/* ===============================================================
-                WI-FI 6 UPOE ACCESS LAYER FLEET (DYNAMICALLY MOUNTED WHEN APS ARE VISIBLE)
-               =============================================================== */}
-            {positions.apPositions.length > 0 && (
-              <group ref={registerPadGroupRef('apZone')}>
-                <ZonePlatform3D
-                  padId="apZone"
-                  position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
-                  size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
-                  baseColor="#081c29"
-                  rimColor="#38bdf8"
-                  title={`BANCROFT WI-FI 6 UPOE ACCESS FLEET (${positions.apPositions.length}× CATALYST APs • 194.0W)`}
-                  subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
-                  showZoneTitles={showZoneTitles}
-                  isLocked={isPadLocked('apZone')}
-                  onTogglePadLock={() =>
-                    handleTogglePadLock('apZone', layout3D.pads.apZone.cx, layout3D.pads.apZone.cz)
-                  }
-                  isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
-                  isParentOfDraggedDevice={
-                    active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
-                  }
-                  onStartPadDrag={handleStartPadDrag3D}
-                />
-
-                {positions.apPositions.map(({ deviceId, padId, defaultDx, defaultDz, ap, pos }) => (
-                  <group key={ap.hostname} ref={registerDeviceGroupRef(deviceId)}>
-                    <WirelessApNode3D
-                      deviceId={deviceId}
-                      padId={padId}
-                      defaultDx={defaultDx}
-                      defaultDz={defaultDz}
-                      ap={ap}
-                      position={pos}
-                      isSelected={activeEntity?.id === ap.hostname}
-                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
-                      isLocked={isDeviceLocked(deviceId)}
-                      onToggleDeviceLock={handleToggleDeviceLock}
-                      onSelect={handleSelectEntity}
-                      onStartDeviceDrag={handleStartDeviceDrag3D}
-                      labelMode={labelMode}
-                    />
-                  </group>
-                ))}
-              </group>
-            )}
 
             {/* ===============================================================
                 3D GLOWING FIBER, ADVA DWDM, MGIG TRUNK & UPOE CONDUITS
@@ -3998,7 +4046,7 @@ export default function MultiDevice3DTopologyScene({
               <span className="w-2.5 h-1.5 rounded bg-emerald-500 inline-block" /> Verified 10G Switch Trunk
             </span>
             <span className="flex items-center gap-1 text-sky-300">
-              <span className="w-2.5 h-1.5 rounded bg-sky-400 inline-block" /> mGig UPOE (7 APs)
+              <span className="w-2.5 h-1.5 rounded bg-sky-400 inline-block" /> mGig UPOE ({positions.apPositions.length} APs)
             </span>
           </div>
         </div>
@@ -4409,7 +4457,9 @@ export default function MultiDevice3DTopologyScene({
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 block">Upstream Switch</span>
-                        <span className="text-white font-bold">T-BAN-2FL-WL</span>
+                        <span className="text-white font-bold">
+                          {activeEntity.data.upstreamSwitch || 'T-BAN-2FL-WL'}
+                        </span>
                       </div>
                       <div>
                         <span className="text-[10px] text-slate-400 block">Switch Port</span>
