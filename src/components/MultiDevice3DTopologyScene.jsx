@@ -30,7 +30,8 @@ import {
   Sparkles,
   Activity,
   ArrowUpDown,
-  RotateCcw,
+  Lock,
+  Unlock,
   Save,
   PanelRightOpen,
   Building2
@@ -155,52 +156,75 @@ function buildSwitchPortsFor3DNode(node, savedDevices = [], parsedSwitchData = n
  * 2) Dragging an individual 3D Device moves it smoothly while clamping it within/near its parent Square Base.
  */
 const DEFAULT_3D_LAYOUT = {
+  defaults: {
+    padsLocked: false,
+    devicesLocked: false
+  },
   pads: {
-    vancZone: { cx: -28.0, cz: -25.0, w: 14.0, d: 11.0 },
-    coloZone: { cx: 4.0, cz: -25.0, w: 14.5, d: 13.0 },
-    mcoreZone: { cx: -18.0, cz: -4.5, w: 12.5, d: 8.5 },
-    coreZone: { cx: 24.0, cz: -4.5, w: 12.5, d: 8.5 },
-    switchZone: { cx: 18.0, cz: 10.5, w: 10.2, d: 8.6 },
-    apZone: { cx: 31.5, cz: 10.5, w: 9.6, d: 9.8 }
+    vancZone: { cx: -28.0, cz: -25.0, w: 14.0, d: 11.0, locked: false },
+    coloZone: { cx: 4.0, cz: -25.0, w: 14.5, d: 13.0, locked: false },
+    mcoreZone: { cx: -18.0, cz: -4.5, w: 12.5, d: 8.5, locked: false },
+    coreZone: { cx: 24.0, cz: -4.5, w: 12.5, d: 8.5, locked: false },
+    switchZone: { cx: 18.0, cz: 10.5, w: 10.2, d: 8.6, locked: false },
+    apZone: { cx: 31.5, cz: 10.5, w: 9.6, d: 9.8, locked: false }
   },
   devices: {
     // Relative to coreZone (T-CORE Metro)
-    coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 4.4, maxDz: 3.2 },
+    coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 18.0, maxDz: 18.0, locked: false },
     // Relative to mcoreZone (M-CORE Florham)
-    mcoreNode: { dx: 0, dz: 0, padId: 'mcoreZone', maxDx: 4.4, maxDz: 3.2 },
+    mcoreNode: { dx: 0, dz: 0, padId: 'mcoreZone', maxDx: 18.0, maxDz: 18.0, locked: false },
     // Relative to switchZone (Bancroft Hall under T-CORE)
-    wlNode: { dx: 2.2, dz: -2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
-    wsNode: { dx: -2.2, dz: 2.0, padId: 'switchZone', maxDx: 4.2, maxDz: 3.8 },
+    wlNode: { dx: 2.2, dz: -2.0, padId: 'switchZone', maxDx: 18.0, maxDz: 18.0, locked: false },
+    wsNode: { dx: -2.2, dz: 2.0, padId: 'switchZone', maxDx: 18.0, maxDz: 18.0, locked: false },
     // 7 Wi-Fi 6 APs relative to apZone
-    'ap-0': { dx: -2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-1': { dx: 2.2, dz: -3.8, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-2': { dx: -2.2, dz: -1.25, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-3': { dx: 2.2, dz: -1.25, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-4': { dx: -2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-5': { dx: 2.2, dz: 1.3, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
-    'ap-6': { dx: -2.2, dz: 3.85, padId: 'apZone', maxDx: 4.3, maxDz: 4.5 },
+    'ap-0': { dx: -2.2, dz: -3.8, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-1': { dx: 2.2, dz: -3.8, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-2': { dx: -2.2, dz: -1.25, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-3': { dx: 2.2, dz: -1.25, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-4': { dx: -2.2, dz: 1.3, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-5': { dx: 2.2, dz: 1.3, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'ap-6': { dx: -2.2, dz: 3.85, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
     // 4 Colocation / Campus Sites relative to coloZone
-    'colo-Halsey165': { dx: -2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
-    'colo-Hastings': { dx: 2.2, dz: -1.3, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
-    'colo-Florham': { dx: -2.2, dz: 1.4, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 },
-    'colo-VancOakridge': { dx: 2.2, dz: 1.4, padId: 'coloZone', maxDx: 4.2, maxDz: 2.3 }
+    'colo-Halsey165': { dx: -2.2, dz: -1.3, padId: 'coloZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'colo-Hastings': { dx: 2.2, dz: -1.3, padId: 'coloZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'colo-Florham': { dx: -2.2, dz: 1.4, padId: 'coloZone', maxDx: 12.0, maxDz: 12.0, locked: false },
+    'colo-VancOakridge': { dx: 2.2, dz: 1.4, padId: 'coloZone', maxDx: 12.0, maxDz: 12.0, locked: false }
   }
 };
 
 function mergeWithDefault3DLayout(saved) {
   if (!saved || typeof saved !== 'object') return structuredClone(DEFAULT_3D_LAYOUT);
   const merged = structuredClone(DEFAULT_3D_LAYOUT);
+  if (saved.defaults && typeof saved.defaults === 'object') {
+    merged.defaults = {
+      padsLocked: Boolean(saved.defaults.padsLocked),
+      devicesLocked: Boolean(saved.defaults.devicesLocked)
+    };
+  }
   if (saved.pads && typeof saved.pads === 'object') {
     for (const [k, v] of Object.entries(saved.pads)) {
-      if (typeof v?.cx === 'number' && typeof v?.cz === 'number') {
-        merged.pads[k] = { ...(merged.pads[k] || {}), cx: v.cx, cz: v.cz };
+      if (v && typeof v === 'object') {
+        const prevPad = merged.pads[k] || {};
+        merged.pads[k] = {
+          ...prevPad,
+          ...(typeof v.cx === 'number' ? { cx: v.cx } : {}),
+          ...(typeof v.cz === 'number' ? { cz: v.cz } : {}),
+          ...(typeof v.locked === 'boolean' ? { locked: v.locked } : {})
+        };
       }
     }
   }
   if (saved.devices && typeof saved.devices === 'object') {
     for (const [k, v] of Object.entries(saved.devices)) {
-      if (typeof v?.dx === 'number' && typeof v?.dz === 'number') {
-        merged.devices[k] = { ...(merged.devices[k] || {}), dx: v.dx, dz: v.dz };
+      if (v && typeof v === 'object') {
+        const prevDev = merged.devices[k] || {};
+        merged.devices[k] = {
+          ...prevDev,
+          ...(typeof v.dx === 'number' ? { dx: v.dx } : {}),
+          ...(typeof v.dz === 'number' ? { dz: v.dz } : {}),
+          ...(typeof v.padId === 'string' ? { padId: v.padId } : {}),
+          ...(typeof v.locked === 'boolean' ? { locked: v.locked } : {})
+        };
       }
     }
   }
@@ -340,6 +364,8 @@ function ZonePlatform3D({
   showZoneTitles = true,
   isDraggingThisPad = false,
   isParentOfDraggedDevice = false,
+  isLocked = false,
+  onTogglePadLock,
   onStartPadDrag,
   onFocusPad,
   onClickTitle
@@ -353,7 +379,9 @@ function ZonePlatform3D({
     <group
       position={position}
       onPointerDown={(e) => {
-        if (onStartPadDrag) onStartPadDrag(e, padId, position[0], position[2]);
+        if (!isLocked && onStartPadDrag) {
+          onStartPadDrag(e, padId, position[0], position[2]);
+        }
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -422,7 +450,7 @@ function ZonePlatform3D({
         />
       </mesh>
 
-      {/* Building / Zone Name Plaque on Front Edge of Base */}
+      {/* Building / Zone Name Plaque on Front Edge of Base + Per-Base Padlock Control */}
       {(showZoneTitles || hovered || activeHighlight) && title && (
         <Html position={[0, 0.18, d / 2 + 0.42]} center zIndexRange={[12, 0]}>
           <div
@@ -433,14 +461,49 @@ function ZonePlatform3D({
               }
             }}
             className={`${
-              handlePlaqueClick ? 'cursor-pointer hover:border-white ' : 'pointer-events-none '
-            }select-none whitespace-nowrap px-2.5 py-0.5 rounded-md bg-slate-950/92 border border-slate-700/90 shadow-lg transition`}
+              handlePlaqueClick ? 'cursor-pointer hover:border-white ' : ''
+            }select-none whitespace-nowrap px-2.5 py-0.5 rounded-md bg-slate-950/92 border ${
+              isLocked ? 'border-amber-500/60' : 'border-slate-700/90'
+            } shadow-lg transition pointer-events-auto`}
           >
-            <div
-              className="text-[9.5px] font-mono font-bold tracking-wider uppercase flex items-center gap-1"
-              style={{ color: rimColor }}
-            >
-              <span>✥ {title}</span>
+            <div className="flex items-center justify-between gap-2">
+              <div
+                className="text-[9.5px] font-mono font-bold tracking-wider uppercase flex items-center gap-1"
+                style={{ color: rimColor }}
+              >
+                <span>{isLocked ? '🔒' : '✥'} {title}</span>
+              </div>
+              {onTogglePadLock && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onTogglePadLock(padId, position[0], position[2]);
+                  }}
+                  className={`px-1.5 py-0.5 rounded border text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition ${
+                    isLocked
+                      ? 'bg-amber-500/25 text-amber-200 border-amber-400/60 hover:bg-amber-500/40'
+                      : 'bg-slate-800/90 text-emerald-300 border-slate-600 hover:border-emerald-400'
+                  }`}
+                  title={
+                    isLocked
+                      ? 'Base is LOCKED (cannot be moved; unlocked switches inside can still move). Click to Unlock Base.'
+                      : 'Base is UNLOCKED (drag base to move it and all its switches together). Click to Lock Base.'
+                  }
+                >
+                  {isLocked ? (
+                    <>
+                      <Lock className="w-2.5 h-2.5 text-amber-300" />
+                      <span>Locked</span>
+                    </>
+                  ) : (
+                    <>
+                      <Unlock className="w-2.5 h-2.5 text-emerald-300" />
+                      <span>Unlocked</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
             {(hovered || activeHighlight) && subtitle && (
               <div className="text-[8px] font-mono text-slate-300">{subtitle}</div>
@@ -589,6 +652,11 @@ function ConduitLink3D({
  */
 function CoreChassis9606R3D({
   deviceId,
+  padId = 'coreZone',
+  defaultDx = 0,
+  defaultDz = 0,
+  isLocked = false,
+  onToggleDeviceLock,
   node,
   position,
   isSelected,
@@ -616,10 +684,18 @@ function CoreChassis9606R3D({
     <group
       position={position}
       onPointerDown={(e) => {
-        if (onStartDeviceDrag) {
-          onStartDeviceDrag(e, deviceId, () =>
-            onSelect({ type: 'device', data: node, id: node.id, pos: position })
+        if (!isLocked && onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(
+            e,
+            deviceId,
+            padId,
+            defaultDx,
+            defaultDz,
+            () => onSelect({ type: 'device', data: node, id: node.id, pos: position })
           );
+        } else {
+          e.stopPropagation();
+          onSelect({ type: 'device', data: node, id: node.id, pos: position });
         }
       }}
       onPointerOver={(e) => {
@@ -683,7 +759,7 @@ function CoreChassis9606R3D({
         );
       })}
 
-      {/* Floating Compact 3D Badge (Moves with Device in Real Time + Direct [HW] Drawer Button) */}
+      {/* Floating Compact 3D Badge (Moves with Device in Real Time + Padlock & Direct [HW] Drawer Button) */}
       {visible && (
         <Html position={[0, 3.35, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -705,20 +781,47 @@ function CoreChassis9606R3D({
                   CORE
                 </span>
               </div>
-              {onOpenHwDrawer && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect({ type: 'device', data: node, id: node.id, pos: position });
-                    onOpenHwDrawer(node.serialNumber);
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
-                  title="Open Hardware & Port Inspector Drawer"
-                >
-                  <PanelRightOpen className="w-2.5 h-2.5" /> HW
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {onToggleDeviceLock && deviceId && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleDeviceLock(deviceId, padId, defaultDx, defaultDz);
+                    }}
+                    className={`px-1.5 py-0.5 rounded border text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition ${
+                      isLocked
+                        ? 'bg-amber-500/30 text-amber-200 border-amber-400/60 hover:bg-amber-500/45'
+                        : 'bg-slate-800/90 text-emerald-300 border-slate-600 hover:border-emerald-400'
+                    }`}
+                    title={
+                      isLocked
+                        ? `${shortName} is LOCKED (stays in place relative to base). Click to Unlock.`
+                        : `${shortName} is UNLOCKED (drag independently within base). Click to Lock.`
+                    }
+                  >
+                    {isLocked ? (
+                      <Lock className="w-2.5 h-2.5 text-amber-300" />
+                    ) : (
+                      <Unlock className="w-2.5 h-2.5 text-emerald-300" />
+                    )}
+                  </button>
+                )}
+                {onOpenHwDrawer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect({ type: 'device', data: node, id: node.id, pos: position });
+                      onOpenHwDrawer(node.serialNumber);
+                    }}
+                    className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
+                    title="Open Hardware & Port Inspector Drawer"
+                  >
+                    <PanelRightOpen className="w-2.5 h-2.5" /> HW
+                  </button>
+                )}
+              </div>
             </div>
             {showFullDetails && (
               <div className="text-[9px] font-mono text-slate-300 mt-0.5">
@@ -746,6 +849,11 @@ const SHARED_SWITCH_HALO_GEOM = new THREE.RingGeometry(2.35, 2.65, 32);
  */
 function SwitchC9300Node3D({
   deviceId,
+  padId = 'switchZone',
+  defaultDx = 0,
+  defaultDz = 0,
+  isLocked = false,
+  onToggleDeviceLock,
   node,
   portsData = [],
   position,
@@ -789,9 +897,14 @@ function SwitchC9300Node3D({
     <group
       position={position}
       onPointerDown={(e) => {
-        if (onStartDeviceDrag && deviceId) {
-          onStartDeviceDrag(e, deviceId, () =>
-            onSelect({ type: 'device', data: node, id: node.id, pos: position })
+        if (!isLocked && onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(
+            e,
+            deviceId,
+            padId,
+            defaultDx,
+            defaultDz,
+            () => onSelect({ type: 'device', data: node, id: node.id, pos: position })
           );
         } else {
           e.stopPropagation();
@@ -874,7 +987,7 @@ function SwitchC9300Node3D({
         </group>
       )}
 
-      {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time + Direct [HW] Drawer Button) */}
+      {/* Compact Non-Overlapping Floating 3D Badge (Moves with Switch in Real Time + Padlock & Direct [HW] Drawer Button) */}
       {visible && (
         <Html position={[0, 1.35 + explodeFactor * 0.9, 0]} center zIndexRange={[25, 0]}>
           <div
@@ -899,20 +1012,47 @@ function SwitchC9300Node3D({
                   {node.isPolled ? 'SQL' : 'CDP'}
                 </span>
               </div>
-              {onOpenHwDrawer && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onSelect({ type: 'device', data: node, id: node.id, pos: position });
-                    onOpenHwDrawer(node.serialNumber);
-                  }}
-                  className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
-                  title={`Open Hardware & Port Drawer for ${node.hostname}`}
-                >
-                  <PanelRightOpen className="w-2.5 h-2.5" /> HW
-                </button>
-              )}
+              <div className="flex items-center gap-1">
+                {onToggleDeviceLock && deviceId && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleDeviceLock(deviceId, padId, defaultDx, defaultDz);
+                    }}
+                    className={`px-1.5 py-0.5 rounded border text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition ${
+                      isLocked
+                        ? 'bg-amber-500/30 text-amber-200 border-amber-400/60 hover:bg-amber-500/45'
+                        : 'bg-slate-800/90 text-emerald-300 border-slate-600 hover:border-emerald-400'
+                    }`}
+                    title={
+                      isLocked
+                        ? `${node.hostname} is LOCKED (stays in place relative to its base). Click to Unlock.`
+                        : `${node.hostname} is UNLOCKED (drag independently within its base). Click to Lock.`
+                    }
+                  >
+                    {isLocked ? (
+                      <Lock className="w-2.5 h-2.5 text-amber-300" />
+                    ) : (
+                      <Unlock className="w-2.5 h-2.5 text-emerald-300" />
+                    )}
+                  </button>
+                )}
+                {onOpenHwDrawer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect({ type: 'device', data: node, id: node.id, pos: position });
+                      onOpenHwDrawer(node.serialNumber);
+                    }}
+                    className="px-1.5 py-0.5 rounded bg-sky-500/25 hover:bg-sky-500 text-sky-200 hover:text-slate-950 border border-sky-400/50 text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition"
+                    title={`Open Hardware & Port Drawer for ${node.hostname}`}
+                  >
+                    <PanelRightOpen className="w-2.5 h-2.5" /> HW
+                  </button>
+                )}
+              </div>
             </div>
             {showFullDetails && (
               <div className="text-[9px] font-mono text-slate-300 mt-0.5">
@@ -936,6 +1076,11 @@ function SwitchC9300Node3D({
  */
 function WirelessApNode3D({
   deviceId,
+  padId = 'apZone',
+  defaultDx = 0,
+  defaultDz = 0,
+  isLocked = false,
+  onToggleDeviceLock,
   ap,
   position,
   isSelected,
@@ -954,9 +1099,14 @@ function WirelessApNode3D({
     <group
       position={position}
       onPointerDown={(e) => {
-        if (onStartDeviceDrag && deviceId) {
-          onStartDeviceDrag(e, deviceId, () =>
-            onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position })
+        if (!isLocked && onStartDeviceDrag && deviceId) {
+          onStartDeviceDrag(
+            e,
+            deviceId,
+            padId,
+            defaultDx,
+            defaultDz,
+            () => onSelect({ type: 'ap', data: ap, id: ap.hostname, pos: position })
           );
         } else {
           e.stopPropagation();
@@ -1005,8 +1155,29 @@ function WirelessApNode3D({
                 : 'bg-slate-950/90 border-emerald-500/45 text-slate-100 hover:border-emerald-300'
             }`}
           >
-            <div className="text-[9.5px] font-mono font-bold text-emerald-300">
-              [{ap.localPort}] {ap.hostname}
+            <div className="flex items-center justify-between gap-1.5 text-[9.5px] font-mono font-bold text-emerald-300">
+              <span>[{ap.localPort}] {ap.hostname}</span>
+              {onToggleDeviceLock && deviceId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleDeviceLock(deviceId, padId, defaultDx, defaultDz);
+                  }}
+                  className={`px-1 py-0.2 rounded border text-[8px] font-mono font-bold flex items-center cursor-pointer transition ${
+                    isLocked
+                      ? 'bg-amber-500/30 text-amber-200 border-amber-400/60'
+                      : 'bg-slate-800/90 text-emerald-300 border-slate-600'
+                  }`}
+                  title={isLocked ? 'Locked AP — Click to Unlock' : 'Unlocked AP — Click to Lock'}
+                >
+                  {isLocked ? (
+                    <Lock className="w-2.5 h-2.5 text-amber-300" />
+                  ) : (
+                    <Unlock className="w-2.5 h-2.5 text-emerald-300" />
+                  )}
+                </button>
+              )}
             </div>
             {showFullDetails && (
               <div className="text-[8.5px] font-mono text-slate-300">
@@ -1256,18 +1427,145 @@ export default function MultiDevice3DTopologyScene({
       .catch(() => setSaveStatus('Saved Locally ✓'));
   }, []);
 
+  // Check independent lock state for a 3D Building Base (pad) or Switch (device)
+  const isPadLocked = useCallback(
+    (padId) => {
+      if (typeof layout3D.pads?.[padId]?.locked === 'boolean') {
+        return layout3D.pads[padId].locked;
+      }
+      return Boolean(layout3D.defaults?.padsLocked);
+    },
+    [layout3D]
+  );
+
+  const isDeviceLocked = useCallback(
+    (deviceId) => {
+      if (typeof layout3D.devices?.[deviceId]?.locked === 'boolean') {
+        return layout3D.devices[deviceId].locked;
+      }
+      return Boolean(layout3D.defaults?.devicesLocked);
+    },
+    [layout3D]
+  );
+
+  // Toggle lock state for an individual 3D Building Base (persisted to PostgreSQL + localStorage)
+  const handleTogglePadLock = useCallback(
+    (padId, fallbackCx = 0, fallbackCz = 0) => {
+      setLayout3D((prev) => {
+        const existing = prev.pads[padId] || DEFAULT_3D_LAYOUT.pads[padId] || {
+          cx: fallbackCx,
+          cz: fallbackCz
+        };
+        const currentLocked =
+          typeof existing.locked === 'boolean'
+            ? existing.locked
+            : Boolean(prev.defaults?.padsLocked);
+        const nextLayout = {
+          ...prev,
+          pads: {
+            ...prev.pads,
+            [padId]: {
+              ...existing,
+              cx: typeof existing.cx === 'number' ? existing.cx : fallbackCx,
+              cz: typeof existing.cz === 'number' ? existing.cz : fallbackCz,
+              locked: !currentLocked
+            }
+          }
+        };
+        persist3DLayout(nextLayout);
+        return nextLayout;
+      });
+    },
+    [persist3DLayout]
+  );
+
+  // Toggle lock state for an individual 3D Switch / Device (persisted to PostgreSQL + localStorage)
+  const handleToggleDeviceLock = useCallback(
+    (deviceId, padId = 'switchZone', fallbackDx = 0, fallbackDz = 0) => {
+      setLayout3D((prev) => {
+        const existing = prev.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId] || {
+          padId,
+          dx: fallbackDx,
+          dz: fallbackDz
+        };
+        const currentLocked =
+          typeof existing.locked === 'boolean'
+            ? existing.locked
+            : Boolean(prev.defaults?.devicesLocked);
+        const nextLayout = {
+          ...prev,
+          devices: {
+            ...prev.devices,
+            [deviceId]: {
+              ...existing,
+              padId: existing.padId || padId,
+              dx: typeof existing.dx === 'number' ? existing.dx : fallbackDx,
+              dz: typeof existing.dz === 'number' ? existing.dz : fallbackDz,
+              locked: !currentLocked
+            }
+          }
+        };
+        persist3DLayout(nextLayout);
+        return nextLayout;
+      });
+    },
+    [persist3DLayout]
+  );
+
+  // Master Lock Controls (Lock/Unlock All Bases, Lock/Unlock All Switches, or Lock/Unlock Everything)
+  const handleSetGlobalLocks = useCallback(
+    ({ padsLocked, devicesLocked }) => {
+      setLayout3D((prev) => {
+        const nextPads = { ...prev.pads };
+        if (typeof padsLocked === 'boolean') {
+          for (const k of Object.keys(nextPads)) {
+            nextPads[k] = { ...nextPads[k], locked: padsLocked };
+          }
+        }
+        const nextDevices = { ...prev.devices };
+        if (typeof devicesLocked === 'boolean') {
+          for (const k of Object.keys(nextDevices)) {
+            nextDevices[k] = { ...nextDevices[k], locked: devicesLocked };
+          }
+        }
+        const nextLayout = {
+          ...prev,
+          defaults: {
+            padsLocked:
+              typeof padsLocked === 'boolean'
+                ? padsLocked
+                : Boolean(prev.defaults?.padsLocked),
+            devicesLocked:
+              typeof devicesLocked === 'boolean'
+                ? devicesLocked
+                : Boolean(prev.defaults?.devicesLocked)
+          },
+          pads: nextPads,
+          devices: nextDevices
+        };
+        persist3DLayout(nextLayout);
+        return nextLayout;
+      });
+    },
+    [persist3DLayout]
+  );
+
   // Start dragging a 3D Square Zone Base (supports both static pads and dynamic bldg-<CODE> bases)
   const handleStartPadDrag3D = useCallback((e, padId, fallbackCx = 0, fallbackCz = 0) => {
-    e.stopPropagation();
-    const hit = new THREE.Vector3();
-    if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return;
-    if (controlsRef.current) controlsRef.current.enabled = false;
-
     setLayout3D((curr) => {
       const pad = curr.pads[padId] || DEFAULT_3D_LAYOUT.pads[padId] || {
         cx: fallbackCx,
         cz: fallbackCz
       };
+      const locked =
+        typeof pad.locked === 'boolean' ? pad.locked : Boolean(curr.defaults?.padsLocked);
+      if (locked) return curr;
+
+      e.stopPropagation();
+      const hit = new THREE.Vector3();
+      if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return curr;
+      if (controlsRef.current) controlsRef.current.enabled = false;
+
       const origX = typeof pad.cx === 'number' ? pad.cx : fallbackCx;
       const origZ = typeof pad.cz === 'number' ? pad.cz : fallbackCz;
       const info = {
@@ -1287,34 +1585,58 @@ export default function MultiDevice3DTopologyScene({
     });
   }, []);
 
-  // Start dragging an individual 3D Device (clamped near its Square Base)
-  const handleStartDeviceDrag3D = useCallback((e, deviceId, onClickCallback) => {
-    e.stopPropagation();
-    const hit = new THREE.Vector3();
-    if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return;
-    if (controlsRef.current) controlsRef.current.enabled = false;
+  // Start dragging an individual 3D Switch / Device relative to its parent Building Base
+  const handleStartDeviceDrag3D = useCallback(
+    (
+      e,
+      deviceId,
+      padId = 'switchZone',
+      fallbackDx = 0,
+      fallbackDz = 0,
+      onClickCallback
+    ) => {
+      e.stopPropagation();
+      setLayout3D((curr) => {
+        const savedDev = curr.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
+        const locked =
+          typeof savedDev?.locked === 'boolean'
+            ? savedDev.locked
+            : Boolean(curr.defaults?.devicesLocked);
+        if (locked) {
+          if (onClickCallback) onClickCallback();
+          return curr;
+        }
 
-    setLayout3D((curr) => {
-      const dev = curr.devices[deviceId] || DEFAULT_3D_LAYOUT.devices[deviceId];
-      if (!dev) return curr;
-      const info = {
-        kind: 'device',
-        id: deviceId,
-        padId: dev.padId,
-        startX: hit.x,
-        startZ: hit.z,
-        origX: dev.dx,
-        origZ: dev.dz,
-        liveX: dev.dx,
-        liveZ: dev.dz,
-        moved: false,
-        onClickCallback
-      };
-      drag3DRef.current = info;
-      setActive3DDrag(info);
-      return curr;
-    });
-  }, []);
+        const hit = new THREE.Vector3();
+        if (!e.ray.intersectPlane(FLOOR_PLANE, hit)) return curr;
+        if (controlsRef.current) controlsRef.current.enabled = false;
+
+        const samePad = !savedDev?.padId || savedDev.padId === padId;
+        const origX =
+          samePad && typeof savedDev?.dx === 'number' ? savedDev.dx : fallbackDx;
+        const origZ =
+          samePad && typeof savedDev?.dz === 'number' ? savedDev.dz : fallbackDz;
+
+        const info = {
+          kind: 'device',
+          id: deviceId,
+          padId,
+          startX: hit.x,
+          startZ: hit.z,
+          origX,
+          origZ,
+          liveX: origX,
+          liveZ: origZ,
+          moved: false,
+          onClickCallback
+        };
+        drag3DRef.current = info;
+        setActive3DDrag(info);
+        return curr;
+      });
+    },
+    []
+  );
 
   // Move handler on the 3D Floor Capture Plane while dragging
   // Direct GPU Group transform (ZERO React state updates while moving -> eliminates WebGL frame buffer blinking!)
@@ -1342,11 +1664,11 @@ export default function MultiDevice3DTopologyScene({
       }
     } else if (current.kind === 'device') {
       const spec = DEFAULT_3D_LAYOUT.devices[current.id] || {
-        maxDx: 18.0,
-        maxDz: 18.0
+        maxDx: 28.0,
+        maxDz: 28.0
       };
-      const maxDx = Math.max(spec.maxDx || 18.0, 18.0);
-      const maxDz = Math.max(spec.maxDz || 18.0, 18.0);
+      const maxDx = Math.max(spec.maxDx || 28.0, 28.0);
+      const maxDz = Math.max(spec.maxDz || 28.0, 28.0);
       const nextDx = +clamp(current.origX + deltaX, -maxDx, maxDx).toFixed(2);
       const nextDz = +clamp(current.origZ + deltaZ, -maxDz, maxDz).toFixed(2);
       current.liveX = nextDx;
@@ -1407,7 +1729,8 @@ export default function MultiDevice3DTopologyScene({
                   devices: {
                     ...prev.devices,
                     [current.id]: {
-                      ...prev.devices[current.id],
+                      ...(prev.devices[current.id] || {}),
+                      padId: current.padId,
                       dx: current.liveX,
                       dz: current.liveZ
                     }
@@ -1443,20 +1766,6 @@ export default function MultiDevice3DTopologyScene({
       persist3DLayout(nextLayout);
       return nextLayout;
     });
-  };
-
-  // Reset 3D Layout to Default
-  const handleReset3DLayout = () => {
-    const fresh = structuredClone(DEFAULT_3D_LAYOUT);
-    setLayout3D(fresh);
-    try {
-      localStorage.removeItem(LAYOUT_3D_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    fetch(API_3D_LAYOUT_ENDPOINT, { method: 'DELETE' })
-      .then(() => setSaveStatus('Reset ✓'))
-      .catch(() => setSaveStatus('Reset ✓'));
   };
 
   // Build unified multi-switch & multi-campus topology graph
@@ -1668,14 +1977,25 @@ export default function MultiDevice3DTopologyScene({
     const corePadCfg = layout3D.pads.coreZone || DEFAULT_3D_LAYOUT.pads.coreZone;
     const banPadCfg = layout3D.pads.switchZone || DEFAULT_3D_LAYOUT.pads.switchZone;
 
-    const hcorePos = [coloPadCfg.cx, 0.2, +(coloPadCfg.cz + 3.2).toFixed(2)];
+    const hcoreSaved = layout3D.devices.hcoreNode;
+    const hcoreDx = typeof hcoreSaved?.dx === 'number' ? hcoreSaved.dx : 0;
+    const hcoreDz = typeof hcoreSaved?.dz === 'number' ? hcoreSaved.dz : 3.2;
+    const hcorePos = [
+      +(coloPadCfg.cx + hcoreDx).toFixed(2),
+      0.2,
+      +(coloPadCfg.cz + hcoreDz).toFixed(2)
+    ];
     const vcorePos = [vancPadCfg.cx, 0.2, +(vancPadCfg.cz + 2.8).toFixed(2)];
 
     // 7 Wi-Fi 6 APs arranged on the Right Access Zone Pad
     const apPositions = attachedAps.slice(0, 7).map((ap, idx) => {
       const deviceId = `ap-${idx}`;
+      const defDev = DEFAULT_3D_LAYOUT.devices[deviceId] || { dx: 0, dz: 0, padId: 'apZone' };
       return {
         deviceId,
+        padId: 'apZone',
+        defaultDx: defDev.dx,
+        defaultDz: defDev.dz,
         ap,
         pos: getPos(deviceId)
       };
@@ -1734,26 +2054,39 @@ export default function MultiDevice3DTopologyScene({
     const coreRows = Math.ceil(metroCorePeers.length / coreCols);
     const coreColSpacing = 4.05;
     const coreRowSpacing = 2.85;
-    const expandedCoreW = Math.max(corePadCfg.w, +(coreCols * coreColSpacing + 3.6).toFixed(2));
-    const expandedCoreD =
+    const baseCoreW = Math.max(corePadCfg.w, +(coreCols * coreColSpacing + 3.6).toFixed(2));
+    const baseCoreD =
       metroCorePeers.length > 0
         ? Math.max(corePadCfg.d, +((coreRows + 1) * coreRowSpacing + 4.2).toFixed(2))
         : corePadCfg.d;
     const expandedCoreCz =
       metroCorePeers.length > 0
-        ? +(corePadCfg.cz - (expandedCoreD - corePadCfg.d) / 2).toFixed(2)
+        ? +(corePadCfg.cz - (baseCoreD - corePadCfg.d) / 2).toFixed(2)
         : corePadCfg.cz;
 
     const corePeerPositions = metroCorePeers.map((sw, idx) => {
       const col = idx % coreCols;
       const row = Math.floor(idx / coreCols);
-      const startX = corePadCfg.cx - ((coreCols - 1) * coreColSpacing) / 2;
-      const startZ = corePadCfg.cz - 3.4 - row * coreRowSpacing;
+      const defaultDx = +((-(coreCols - 1) * coreColSpacing) / 2 + col * coreColSpacing).toFixed(2);
+      const defaultDz = +(-3.4 - row * coreRowSpacing).toFixed(2);
+      const savedDev = layout3D.devices[sw.id];
+      const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
+      const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
       return {
         sw,
-        pos: [+(startX + col * coreColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+        padId: 'coreZone',
+        defaultDx,
+        defaultDz,
+        dx,
+        dz,
+        pos: [+(corePadCfg.cx + dx).toFixed(2), 0.2, +(corePadCfg.cz + dz).toFixed(2)]
       };
     });
+
+    const maxCorePeerDx = corePeerPositions.reduce((m, p) => Math.max(m, Math.abs(p.dx)), 0);
+    const maxCorePeerDz = corePeerPositions.reduce((m, p) => Math.max(m, Math.abs(p.dz)), 0);
+    const expandedCoreW = Math.max(baseCoreW, +(maxCorePeerDx * 2 + 5.2).toFixed(2));
+    const expandedCoreD = Math.max(baseCoreD, +(maxCorePeerDz * 2 + 4.4).toFixed(2));
 
     const coreZoneBox = {
       cx: corePadCfg.cx,
@@ -1765,26 +2098,39 @@ export default function MultiDevice3DTopologyScene({
     // 2b. Place Florham Core Peers (DC2-9500, Flo-WLC-1/2, F-WLC-1/2, datacenter-ise, etc.) on M-CORE Base (mcoreZone)
     const mcoreCols = 3;
     const mcoreRows = Math.ceil(florhamCorePeers.length / mcoreCols);
-    const expandedMcoreW = Math.max(mcorePadCfg.w, +(mcoreCols * coreColSpacing + 3.6).toFixed(2));
-    const expandedMcoreD =
+    const baseMcoreW = Math.max(mcorePadCfg.w, +(mcoreCols * coreColSpacing + 3.6).toFixed(2));
+    const baseMcoreD =
       florhamCorePeers.length > 0
         ? Math.max(mcorePadCfg.d, +((mcoreRows + 1) * coreRowSpacing + 4.2).toFixed(2))
         : mcorePadCfg.d;
     const expandedMcoreCz =
       florhamCorePeers.length > 0
-        ? +(mcorePadCfg.cz - (expandedMcoreD - mcorePadCfg.d) / 2).toFixed(2)
+        ? +(mcorePadCfg.cz - (baseMcoreD - mcorePadCfg.d) / 2).toFixed(2)
         : mcorePadCfg.cz;
 
     const mcorePeerPositions = florhamCorePeers.map((sw, idx) => {
       const col = idx % mcoreCols;
       const row = Math.floor(idx / mcoreCols);
-      const startX = mcorePadCfg.cx - ((mcoreCols - 1) * coreColSpacing) / 2;
-      const startZ = mcorePadCfg.cz - 3.4 - row * coreRowSpacing;
+      const defaultDx = +((-(mcoreCols - 1) * coreColSpacing) / 2 + col * coreColSpacing).toFixed(2);
+      const defaultDz = +(-3.4 - row * coreRowSpacing).toFixed(2);
+      const savedDev = layout3D.devices[sw.id];
+      const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
+      const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
       return {
         sw,
-        pos: [+(startX + col * coreColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+        padId: 'mcoreZone',
+        defaultDx,
+        defaultDz,
+        dx,
+        dz,
+        pos: [+(mcorePadCfg.cx + dx).toFixed(2), 0.2, +(mcorePadCfg.cz + dz).toFixed(2)]
       };
     });
+
+    const maxMcorePeerDx = mcorePeerPositions.reduce((m, p) => Math.max(m, Math.abs(p.dx)), 0);
+    const maxMcorePeerDz = mcorePeerPositions.reduce((m, p) => Math.max(m, Math.abs(p.dz)), 0);
+    const expandedMcoreW = Math.max(baseMcoreW, +(maxMcorePeerDx * 2 + 5.2).toFixed(2));
+    const expandedMcoreD = Math.max(baseMcoreD, +(maxMcorePeerDz * 2 + 4.4).toFixed(2));
 
     const mcoreZoneBox = {
       cx: mcorePadCfg.cx,
@@ -1798,26 +2144,39 @@ export default function MultiDevice3DTopologyScene({
     const banRows = Math.ceil(banExtraSwitches.length / banCols);
     const banColSpacing = 4.1;
     const banRowSpacing = 2.95;
-    const expandedBanW = banPadCfg.w;
-    const expandedBanD =
+    const baseBanW = banPadCfg.w;
+    const baseBanD =
       banExtraSwitches.length > 0
         ? Math.max(banPadCfg.d, +(banPadCfg.d + banRows * banRowSpacing + 0.8).toFixed(2))
         : banPadCfg.d;
     const expandedBanCz =
       banExtraSwitches.length > 0
-        ? +(banPadCfg.cz + (expandedBanD - banPadCfg.d) / 2).toFixed(2)
+        ? +(banPadCfg.cz + (baseBanD - banPadCfg.d) / 2).toFixed(2)
         : banPadCfg.cz;
 
     const banExtraPositions = banExtraSwitches.map((sw, idx) => {
       const col = idx % banCols;
       const row = Math.floor(idx / banCols);
-      const startX = banPadCfg.cx - ((banCols - 1) * banColSpacing) / 2;
-      const startZ = banPadCfg.cz + 3.6 + row * banRowSpacing;
+      const defaultDx = +((-(banCols - 1) * banColSpacing) / 2 + col * banColSpacing).toFixed(2);
+      const defaultDz = +(3.6 + row * banRowSpacing).toFixed(2);
+      const savedDev = layout3D.devices[sw.id];
+      const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
+      const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
       return {
         sw,
-        pos: [+(startX + col * banColSpacing).toFixed(2), 0.2, +startZ.toFixed(2)]
+        padId: 'switchZone',
+        defaultDx,
+        defaultDz,
+        dx,
+        dz,
+        pos: [+(banPadCfg.cx + dx).toFixed(2), 0.2, +(banPadCfg.cz + dz).toFixed(2)]
       };
     });
+
+    const maxBanDx = banExtraPositions.reduce((m, p) => Math.max(m, Math.abs(p.dx)), 0);
+    const maxBanDz = banExtraPositions.reduce((m, p) => Math.max(m, Math.abs(p.dz)), 0);
+    const expandedBanW = Math.max(baseBanW, +(maxBanDx * 2 + 4.8).toFixed(2));
+    const expandedBanD = Math.max(baseBanD, +(maxBanDz * 2 + 4.0).toFixed(2));
 
     const switchZoneBox = {
       cx: banPadCfg.cx,
@@ -1888,15 +2247,32 @@ export default function MultiDevice3DTopologyScene({
           const switchPositions = grp.switches.map((sw, idx) => {
             const col = idx % grp.cols;
             const row = Math.floor(idx / grp.cols);
-            const pos = [
-              +(cx + startLocalX + col * grp.colSpacing).toFixed(2),
-              0.2,
-              +(cz + startLocalZ + row * grp.rowSpacing).toFixed(2)
-            ];
-            const item = { sw, pos, buildingCode: grp.code, siteCode: grp.siteCode };
+            const defaultDx = +(startLocalX + col * grp.colSpacing).toFixed(2);
+            const defaultDz = +(startLocalZ + row * grp.rowSpacing).toFixed(2);
+            const savedDev = layout3D.devices[sw.id];
+            const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
+            const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
+            const pos = [+(cx + dx).toFixed(2), 0.2, +(cz + dz).toFixed(2)];
+            const item = {
+              sw,
+              pos,
+              padId,
+              defaultDx,
+              defaultDz,
+              dx,
+              dz,
+              buildingCode: grp.code,
+              siteCode: grp.siteCode
+            };
             switchItems.push(item);
             return item;
           });
+
+          // Auto-expand building base footprint if any child switch was dragged outward
+          const maxAbsDx = switchPositions.reduce((m, item) => Math.max(m, Math.abs(item.dx)), 0);
+          const maxAbsDz = switchPositions.reduce((m, item) => Math.max(m, Math.abs(item.dz)), 0);
+          const expandedW = Math.max(grp.w, +(maxAbsDx * 2 + 4.8).toFixed(2));
+          const expandedD = Math.max(grp.d, +(maxAbsDz * 2 + 3.8).toFixed(2));
 
           bases.push({
             padId,
@@ -1905,8 +2281,8 @@ export default function MultiDevice3DTopologyScene({
             label: grp.label,
             cx,
             cz,
-            w: grp.w,
-            d: grp.d,
+            w: expandedW,
+            d: expandedD,
             theme,
             switches: grp.switches,
             switchPositions
@@ -2183,6 +2559,68 @@ export default function MultiDevice3DTopologyScene({
       }
     ];
 
+    const padCoordsById = {
+      vancZone: { cx: vancPadCfg.cx, cz: vancPadCfg.cz },
+      coloZone: { cx: coloPadCfg.cx, cz: coloPadCfg.cz },
+      mcoreZone: { cx: mcoreZoneBox.cx, cz: mcoreZoneBox.cz },
+      coreZone: { cx: coreZoneBox.cx, cz: coreZoneBox.cz },
+      switchZone: { cx: switchZoneBox.cx, cz: switchZoneBox.cz },
+      apZone: { cx: layout3D.pads.apZone.cx, cz: layout3D.pads.apZone.cz }
+    };
+    buildingBases.forEach((b) => {
+      padCoordsById[b.padId] = { cx: b.cx, cz: b.cz };
+    });
+
+    const deviceLayoutMetaById = {};
+    if (coreNode) {
+      deviceLayoutMetaById[coreNode.id] = {
+        deviceId: 'coreNode',
+        padId: 'coreZone',
+        defaultDx: DEFAULT_3D_LAYOUT.devices.coreNode.dx,
+        defaultDz: DEFAULT_3D_LAYOUT.devices.coreNode.dz
+      };
+    }
+    if (mcoreNode) {
+      deviceLayoutMetaById[mcoreNode.id] = {
+        deviceId: 'mcoreNode',
+        padId: 'mcoreZone',
+        defaultDx: DEFAULT_3D_LAYOUT.devices.mcoreNode.dx,
+        defaultDz: DEFAULT_3D_LAYOUT.devices.mcoreNode.dz
+      };
+    }
+    if (hcoreNode) {
+      deviceLayoutMetaById[hcoreNode.id] = {
+        deviceId: 'hcoreNode',
+        padId: 'coloZone',
+        defaultDx: 0,
+        defaultDz: 3.2
+      };
+    }
+    if (wlNode) {
+      deviceLayoutMetaById[wlNode.id] = {
+        deviceId: 'wlNode',
+        padId: 'switchZone',
+        defaultDx: DEFAULT_3D_LAYOUT.devices.wlNode.dx,
+        defaultDz: DEFAULT_3D_LAYOUT.devices.wlNode.dz
+      };
+    }
+    if (workStudyNode) {
+      deviceLayoutMetaById[workStudyNode.id] = {
+        deviceId: 'wsNode',
+        padId: 'switchZone',
+        defaultDx: DEFAULT_3D_LAYOUT.devices.wsNode.dx,
+        defaultDz: DEFAULT_3D_LAYOUT.devices.wsNode.dz
+      };
+    }
+    allAdditionalSwitchPositions.forEach((item) => {
+      deviceLayoutMetaById[item.sw.id] = {
+        deviceId: item.sw.id,
+        padId: item.padId,
+        defaultDx: item.defaultDx,
+        defaultDz: item.defaultDz
+      };
+    });
+
     return {
       corePos,
       mcorePos,
@@ -2204,9 +2642,20 @@ export default function MultiDevice3DTopologyScene({
       buildingBases,
       apPositions,
       infraNodes,
+      padCoordsById,
+      deviceLayoutMetaById,
       additionalSwitchPositions: allAdditionalSwitchPositions
     };
-  }, [attachedAps, layout3D, additionalSwitches]);
+  }, [
+    attachedAps,
+    layout3D,
+    additionalSwitches,
+    coreNode,
+    mcoreNode,
+    hcoreNode,
+    wlNode,
+    workStudyNode
+  ]);
 
   // Selected entity in the 3D scene (defaults to T-BAN-2FL-WL so the drawer immediately shows rich telemetry)
   const [selected3DEntity, setSelected3DEntity] = useState(null);
@@ -2721,7 +3170,7 @@ export default function MultiDevice3DTopologyScene({
             </button>
           ))}
 
-          {/* 3D Drag & Save Controls */}
+          {/* 3D Drag, Lock & Save Controls (Replaces Reset 3D) */}
           <button
             type="button"
             onClick={handleSwapColoAndAp3D}
@@ -2732,15 +3181,72 @@ export default function MultiDevice3DTopologyScene({
             Swap Colo ▲ / AP ▼
           </button>
 
-          <button
-            type="button"
-            onClick={handleReset3DLayout}
-            className="px-2 py-1 rounded-md bg-slate-900 hover:bg-slate-800 text-slate-300 border border-slate-700 font-mono text-[10px] flex items-center gap-1 cursor-pointer transition"
-            title="Reset all dragged 3D bases and devices back to default coordinates"
-          >
-            <RotateCcw className="w-3 h-3" />
-            Reset 3D
-          </button>
+          {/* Master Lock Controls: Lock All / Unlock All, Lock Bases, Lock Switches */}
+          {(() => {
+            const padsLocked = Boolean(layout3D.defaults?.padsLocked);
+            const devicesLocked = Boolean(layout3D.defaults?.devicesLocked);
+            const allLocked = padsLocked && devicesLocked;
+            return (
+              <div className="flex items-center gap-1 bg-slate-900/95 p-0.5 rounded-lg border border-slate-700/90">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleSetGlobalLocks({
+                      padsLocked: !allLocked,
+                      devicesLocked: !allLocked
+                    })
+                  }
+                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold flex items-center gap-1 cursor-pointer transition ${
+                    allLocked
+                      ? 'bg-amber-500/25 text-amber-300 border border-amber-400/50'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+                  }`}
+                  title={
+                    allLocked
+                      ? 'All Building Bases & Switches are Locked — Click to Unlock All'
+                      : 'Lock All Building Bases & Switches in place (Presentation Mode)'
+                  }
+                >
+                  {allLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                  {allLocked ? 'All Locked' : 'Lock All'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSetGlobalLocks({ padsLocked: !padsLocked })}
+                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition ${
+                    padsLocked
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                  title={
+                    padsLocked
+                      ? 'Building Bases are Locked (Switches can still move inside them) — Click to Unlock Bases'
+                      : 'Lock all Building Bases while keeping Switches movable inside them'
+                  }
+                >
+                  {padsLocked ? '🔒 Bases' : '🔓 Bases'}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSetGlobalLocks({ devicesLocked: !devicesLocked })}
+                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-semibold flex items-center gap-1 cursor-pointer transition ${
+                    devicesLocked
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-400/40'
+                      : 'text-slate-300 hover:text-white'
+                  }`}
+                  title={
+                    devicesLocked
+                      ? 'Switches are Locked relative to their Building Base — Click to Unlock Switches'
+                      : 'Lock all Switches relative to their Building Base'
+                  }
+                >
+                  {devicesLocked ? '🔒 Switches' : '🔓 Switches'}
+                </button>
+              </div>
+            );
+          })()}
 
           {/* Quick Building Filter in 3D HUD Bar */}
           {onSelectBuildingFilter && (
@@ -2961,6 +3467,10 @@ export default function MultiDevice3DTopologyScene({
                 title="VANCOUVER CAMPUS (CANADA) • V-CORE & FORTIGATE HA"
                 subtitle="V-CORE • V-FG1 & V-FG2 • ASA/ASR • 2× NCS Carrier Edge"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('vancZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock('vancZone', positions.vancPadCfg.cx, positions.vancPadCfg.cz)
+                }
                 isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'vancZone'}
                 isParentOfDraggedDevice={false}
                 onStartPadDrag={handleStartPadDrag3D}
@@ -2993,6 +3503,10 @@ export default function MultiDevice3DTopologyScene({
                 title="165 HALSEY US COLOCATION • H-CORE (TOP APEX OF US TRIANGLE)"
                 subtitle="hcore(FXS1836Q2KE) Nexus 7706 • FG-1 & FG-2 • NCS-5504 • Fort D-1 & D-2"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('coloZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock('coloZone', positions.coloPadCfg.cx, positions.coloPadCfg.cz)
+                }
                 isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coloZone'}
                 isParentOfDraggedDevice={
                   active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coloZone'
@@ -3001,16 +3515,24 @@ export default function MultiDevice3DTopologyScene({
               />
 
               {hcoreNode && (
-                <CoreChassis9606R3D
-                  deviceId="hcoreNode"
-                  node={hcoreNode}
-                  position={positions.hcorePos}
-                  isSelected={activeEntity?.id === hcoreNode.id}
-                  isDragging={false}
-                  onSelect={handleSelectEntity}
-                  onOpenHwDrawer={onOpenHwDrawer}
-                  labelMode={labelMode}
-                />
+                <group ref={registerDeviceGroupRef('hcoreNode')}>
+                  <CoreChassis9606R3D
+                    deviceId="hcoreNode"
+                    padId="coloZone"
+                    defaultDx={0}
+                    defaultDz={3.2}
+                    node={hcoreNode}
+                    position={positions.hcorePos}
+                    isSelected={activeEntity?.id === hcoreNode.id}
+                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'hcoreNode'}
+                    isLocked={isDeviceLocked('hcoreNode')}
+                    onToggleDeviceLock={handleToggleDeviceLock}
+                    onSelect={handleSelectEntity}
+                    onStartDeviceDrag={handleStartDeviceDrag3D}
+                    onOpenHwDrawer={onOpenHwDrawer}
+                    labelMode={labelMode}
+                  />
+                </group>
               )}
 
               {positions.infraNodes
@@ -3041,6 +3563,14 @@ export default function MultiDevice3DTopologyScene({
                 title={`M-CORE • FLORHAM CAMPUS CORE & DC2 (${(mcoreNode ? 1 : 0) + positions.mcorePeerPositions.length} SWITCHES)`}
                 subtitle="mcore-9600 (132.238.129.40) + M-FG-1/2 + DC2-9500 + WLCs • Florham Buildings Below"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('mcoreZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock(
+                    'mcoreZone',
+                    positions.mcoreZoneBox.cx,
+                    positions.mcoreZoneBox.cz
+                  )
+                }
                 isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'mcoreZone'}
                 isParentOfDraggedDevice={
                   active3DDrag?.kind === 'device' && active3DDrag?.padId === 'mcoreZone'
@@ -3060,10 +3590,15 @@ export default function MultiDevice3DTopologyScene({
                 <group ref={registerDeviceGroupRef('mcoreNode')}>
                   <CoreChassis9606R3D
                     deviceId="mcoreNode"
+                    padId="mcoreZone"
+                    defaultDx={DEFAULT_3D_LAYOUT.devices.mcoreNode.dx}
+                    defaultDz={DEFAULT_3D_LAYOUT.devices.mcoreNode.dz}
                     node={mcoreNode}
                     position={positions.mcorePos}
                     isSelected={activeEntity?.id === mcoreNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'mcoreNode'}
+                    isLocked={isDeviceLocked('mcoreNode')}
+                    onToggleDeviceLock={handleToggleDeviceLock}
                     onSelect={handleSelectEntity}
                     onStartDeviceDrag={handleStartDeviceDrag3D}
                     onOpenHwDrawer={onOpenHwDrawer}
@@ -3085,27 +3620,36 @@ export default function MultiDevice3DTopologyScene({
                   />
                 ))}
 
-              {positions.mcorePeerPositions.map(({ sw, pos }) => {
+              {positions.mcorePeerPositions.map(({ sw, pos, padId, defaultDx, defaultDz }) => {
                 const useCompact = positions.additionalSwitchPositions.length > 18;
                 return (
-                  <SwitchC9300Node3D
-                    key={sw.id}
-                    node={sw}
-                    position={pos}
-                    portsData={
-                      useCompact
-                        ? []
-                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                    }
-                    isSelected={activeEntity?.id === sw.id}
-                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                    onSelect={handleSelectEntity}
-                    onOpenHwDrawer={onOpenHwDrawer}
-                    labelMode={labelMode}
-                    xrayMode={multiXrayMode}
-                    explodeFactor={multiExplode}
-                    useCompactMesh={useCompact}
-                  />
+                  <group key={sw.id} ref={registerDeviceGroupRef(sw.id)}>
+                    <SwitchC9300Node3D
+                      deviceId={sw.id}
+                      padId={padId}
+                      defaultDx={defaultDx}
+                      defaultDz={defaultDz}
+                      node={sw}
+                      position={pos}
+                      portsData={
+                        useCompact
+                          ? []
+                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                      }
+                      isSelected={activeEntity?.id === sw.id}
+                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
+                      isLocked={isDeviceLocked(sw.id)}
+                      onToggleDeviceLock={handleToggleDeviceLock}
+                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                      onSelect={handleSelectEntity}
+                      onStartDeviceDrag={handleStartDeviceDrag3D}
+                      onOpenHwDrawer={onOpenHwDrawer}
+                      labelMode={labelMode}
+                      xrayMode={multiXrayMode}
+                      explodeFactor={multiExplode}
+                      useCompactMesh={useCompact}
+                    />
+                  </group>
                 );
               })}
             </group>
@@ -3124,6 +3668,14 @@ export default function MultiDevice3DTopologyScene({
                 title={`T-CORE • METROPOLITAN CAMPUS CORE & DC1 (${(coreNode ? 1 : 0) + positions.corePeerPositions.length} SWITCHES)`}
                 subtitle="tcore-9600 (132.238.1.40) + T-FG-1/2 + DC1-9500/9300 + WLCs • Metro Buildings Below"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('coreZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock(
+                    'coreZone',
+                    positions.coreZoneBox.cx,
+                    positions.coreZoneBox.cz
+                  )
+                }
                 isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'coreZone'}
                 isParentOfDraggedDevice={
                   active3DDrag?.kind === 'device' && active3DDrag?.padId === 'coreZone'
@@ -3143,10 +3695,15 @@ export default function MultiDevice3DTopologyScene({
                 <group ref={registerDeviceGroupRef('coreNode')}>
                   <CoreChassis9606R3D
                     deviceId="coreNode"
+                    padId="coreZone"
+                    defaultDx={DEFAULT_3D_LAYOUT.devices.coreNode.dx}
+                    defaultDz={DEFAULT_3D_LAYOUT.devices.coreNode.dz}
                     node={coreNode}
                     position={positions.corePos}
                     isSelected={activeEntity?.id === coreNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
+                    isLocked={isDeviceLocked('coreNode')}
+                    onToggleDeviceLock={handleToggleDeviceLock}
                     onSelect={handleSelectEntity}
                     onStartDeviceDrag={handleStartDeviceDrag3D}
                     onOpenHwDrawer={onOpenHwDrawer}
@@ -3168,27 +3725,36 @@ export default function MultiDevice3DTopologyScene({
                   />
                 ))}
 
-              {positions.corePeerPositions.map(({ sw, pos }) => {
+              {positions.corePeerPositions.map(({ sw, pos, padId, defaultDx, defaultDz }) => {
                 const useCompact = positions.additionalSwitchPositions.length > 18;
                 return (
-                  <SwitchC9300Node3D
-                    key={sw.id}
-                    node={sw}
-                    position={pos}
-                    portsData={
-                      useCompact
-                        ? []
-                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                    }
-                    isSelected={activeEntity?.id === sw.id}
-                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                    onSelect={handleSelectEntity}
-                    onOpenHwDrawer={onOpenHwDrawer}
-                    labelMode={labelMode}
-                    xrayMode={multiXrayMode}
-                    explodeFactor={multiExplode}
-                    useCompactMesh={useCompact}
-                  />
+                  <group key={sw.id} ref={registerDeviceGroupRef(sw.id)}>
+                    <SwitchC9300Node3D
+                      deviceId={sw.id}
+                      padId={padId}
+                      defaultDx={defaultDx}
+                      defaultDz={defaultDz}
+                      node={sw}
+                      position={pos}
+                      portsData={
+                        useCompact
+                          ? []
+                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                      }
+                      isSelected={activeEntity?.id === sw.id}
+                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
+                      isLocked={isDeviceLocked(sw.id)}
+                      onToggleDeviceLock={handleToggleDeviceLock}
+                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                      onSelect={handleSelectEntity}
+                      onStartDeviceDrag={handleStartDeviceDrag3D}
+                      onOpenHwDrawer={onOpenHwDrawer}
+                      labelMode={labelMode}
+                      xrayMode={multiXrayMode}
+                      explodeFactor={multiExplode}
+                      useCompactMesh={useCompact}
+                    />
+                  </group>
                 );
               })}
             </group>
@@ -3223,6 +3789,14 @@ export default function MultiDevice3DTopologyScene({
                 title={`BAN • BANCROFT HALL (${(wlNode ? 1 : 0) + (workStudyNode ? 1 : 0) + positions.banExtraPositions.length} SWITCHES)`}
                 subtitle="2 Polled C9300-24UX + 4 Discovered Bancroft Switches • Click Plaque to Filter BAN"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('switchZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock(
+                    'switchZone',
+                    positions.switchZoneBox.cx,
+                    positions.switchZoneBox.cz
+                  )
+                }
                 isDraggingThisPad={
                   active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
                 }
@@ -3244,11 +3818,16 @@ export default function MultiDevice3DTopologyScene({
                 <group ref={registerDeviceGroupRef('wlNode')}>
                   <SwitchC9300Node3D
                     deviceId="wlNode"
+                    padId="switchZone"
+                    defaultDx={DEFAULT_3D_LAYOUT.devices.wlNode.dx}
+                    defaultDz={DEFAULT_3D_LAYOUT.devices.wlNode.dz}
                     node={wlNode}
                     position={positions.wlPos}
                     portsData={buildSwitchPortsFor3DNode(wlNode, savedDevices, parsedSwitchData)}
                     isSelected={activeEntity?.id === wlNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
+                    isLocked={isDeviceLocked('wlNode')}
+                    onToggleDeviceLock={handleToggleDeviceLock}
                     isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
                     onSelect={handleSelectEntity}
                     onStartDeviceDrag={handleStartDeviceDrag3D}
@@ -3264,11 +3843,16 @@ export default function MultiDevice3DTopologyScene({
                 <group ref={registerDeviceGroupRef('wsNode')}>
                   <SwitchC9300Node3D
                     deviceId="wsNode"
+                    padId="switchZone"
+                    defaultDx={DEFAULT_3D_LAYOUT.devices.wsNode.dx}
+                    defaultDz={DEFAULT_3D_LAYOUT.devices.wsNode.dz}
                     node={workStudyNode}
                     position={positions.wsPos}
                     portsData={buildSwitchPortsFor3DNode(workStudyNode, savedDevices, parsedSwitchData)}
                     isSelected={activeEntity?.id === workStudyNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
+                    isLocked={isDeviceLocked('wsNode')}
+                    onToggleDeviceLock={handleToggleDeviceLock}
                     isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
                     onSelect={handleSelectEntity}
                     onStartDeviceDrag={handleStartDeviceDrag3D}
@@ -3280,27 +3864,36 @@ export default function MultiDevice3DTopologyScene({
                 </group>
               )}
 
-              {positions.banExtraPositions.map(({ sw, pos }) => {
+              {positions.banExtraPositions.map(({ sw, pos, padId, defaultDx, defaultDz }) => {
                 const useCompact = positions.additionalSwitchPositions.length > 18;
                 return (
-                  <SwitchC9300Node3D
-                    key={sw.id}
-                    node={sw}
-                    position={pos}
-                    portsData={
-                      useCompact
-                        ? []
-                        : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                    }
-                    isSelected={activeEntity?.id === sw.id}
-                    isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                    onSelect={handleSelectEntity}
-                    onOpenHwDrawer={onOpenHwDrawer}
-                    labelMode={labelMode}
-                    xrayMode={multiXrayMode}
-                    explodeFactor={multiExplode}
-                    useCompactMesh={useCompact}
-                  />
+                  <group key={sw.id} ref={registerDeviceGroupRef(sw.id)}>
+                    <SwitchC9300Node3D
+                      deviceId={sw.id}
+                      padId={padId}
+                      defaultDx={defaultDx}
+                      defaultDz={defaultDz}
+                      node={sw}
+                      position={pos}
+                      portsData={
+                        useCompact
+                          ? []
+                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                      }
+                      isSelected={activeEntity?.id === sw.id}
+                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
+                      isLocked={isDeviceLocked(sw.id)}
+                      onToggleDeviceLock={handleToggleDeviceLock}
+                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                      onSelect={handleSelectEntity}
+                      onStartDeviceDrag={handleStartDeviceDrag3D}
+                      onOpenHwDrawer={onOpenHwDrawer}
+                      labelMode={labelMode}
+                      xrayMode={multiXrayMode}
+                      explodeFactor={multiExplode}
+                      useCompactMesh={useCompact}
+                    />
+                  </group>
                 );
               })}
             </group>
@@ -3323,10 +3916,14 @@ export default function MultiDevice3DTopologyScene({
                     title={`[${campusTag}] ${bldg.code} • ${bldg.label.toUpperCase()} (${bldg.switches.length} SWITCH${bldg.switches.length === 1 ? '' : 'ES'})`}
                     subtitle={`Connected to ${bldg.siteCode === 'Florham' ? 'mcore-9600 (Florham)' : 'tcore-9600 (Metro)'} • Click Plaque to Filter ${bldg.code}`}
                     showZoneTitles={showZoneTitles}
+                    isLocked={isPadLocked(bldg.padId)}
+                    onTogglePadLock={() => handleTogglePadLock(bldg.padId, bldg.cx, bldg.cz)}
                     isDraggingThisPad={
                       active3DDrag?.kind === 'pad' && active3DDrag?.id === bldg.padId
                     }
-                    isParentOfDraggedDevice={false}
+                    isParentOfDraggedDevice={
+                      active3DDrag?.kind === 'device' && active3DDrag?.padId === bldg.padId
+                    }
                     onStartPadDrag={handleStartPadDrag3D}
                     onClickTitle={
                       onSelectBuildingFilter
@@ -3338,25 +3935,34 @@ export default function MultiDevice3DTopologyScene({
                     }
                   />
 
-                  {bldg.switchPositions.map(({ sw, pos }) => (
-                    <SwitchC9300Node3D
-                      key={sw.id}
-                      node={sw}
-                      position={pos}
-                      portsData={
-                        useCompact
-                          ? []
-                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                      }
-                      isSelected={activeEntity?.id === sw.id}
-                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                      onSelect={handleSelectEntity}
-                      onOpenHwDrawer={onOpenHwDrawer}
-                      labelMode={labelMode}
-                      xrayMode={multiXrayMode}
-                      explodeFactor={multiExplode}
-                      useCompactMesh={useCompact}
-                    />
+                  {bldg.switchPositions.map(({ sw, pos, padId, defaultDx, defaultDz }) => (
+                    <group key={sw.id} ref={registerDeviceGroupRef(sw.id)}>
+                      <SwitchC9300Node3D
+                        deviceId={sw.id}
+                        padId={padId}
+                        defaultDx={defaultDx}
+                        defaultDz={defaultDz}
+                        node={sw}
+                        position={pos}
+                        portsData={
+                          useCompact
+                            ? []
+                            : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
+                        }
+                        isSelected={activeEntity?.id === sw.id}
+                        isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
+                        isLocked={isDeviceLocked(sw.id)}
+                        onToggleDeviceLock={handleToggleDeviceLock}
+                        isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
+                        onSelect={handleSelectEntity}
+                        onStartDeviceDrag={handleStartDeviceDrag3D}
+                        onOpenHwDrawer={onOpenHwDrawer}
+                        labelMode={labelMode}
+                        xrayMode={multiXrayMode}
+                        explodeFactor={multiExplode}
+                        useCompactMesh={useCompact}
+                      />
+                    </group>
                   ))}
                 </group>
               );
@@ -3375,6 +3981,10 @@ export default function MultiDevice3DTopologyScene({
                 title="BANCROFT WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
                 subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
                 showZoneTitles={showZoneTitles}
+                isLocked={isPadLocked('apZone')}
+                onTogglePadLock={() =>
+                  handleTogglePadLock('apZone', layout3D.pads.apZone.cx, layout3D.pads.apZone.cz)
+                }
                 isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
                 isParentOfDraggedDevice={
                   active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
@@ -3382,14 +3992,19 @@ export default function MultiDevice3DTopologyScene({
                 onStartPadDrag={handleStartPadDrag3D}
               />
 
-              {positions.apPositions.map(({ deviceId, ap, pos }) => (
+              {positions.apPositions.map(({ deviceId, padId, defaultDx, defaultDz, ap, pos }) => (
                 <group key={ap.hostname} ref={registerDeviceGroupRef(deviceId)}>
                   <WirelessApNode3D
                     deviceId={deviceId}
+                    padId={padId}
+                    defaultDx={defaultDx}
+                    defaultDz={defaultDz}
                     ap={ap}
                     position={pos}
                     isSelected={activeEntity?.id === ap.hostname}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
+                    isLocked={isDeviceLocked(deviceId)}
+                    onToggleDeviceLock={handleToggleDeviceLock}
                     onSelect={handleSelectEntity}
                     onStartDeviceDrag={handleStartDeviceDrag3D}
                     labelMode={labelMode}
@@ -3425,10 +4040,10 @@ export default function MultiDevice3DTopologyScene({
             />
           </Canvas>
 
-          {/* Bottom-Left Compact 3D Legend & Drag Instructions Pill */}
+          {/* Bottom-Left Compact 3D Legend & Drag/Lock Instructions Pill */}
           <div className="absolute bottom-3 left-3 flex flex-wrap items-center gap-3 px-3 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800/90 text-[11px] font-mono backdrop-blur-md pointer-events-none">
             <span className="text-sky-300 font-bold">
-              ✥ Drag Any 3D Square Base or Device (Auto-Saves to SQL) • Click Device to Hover Info • Drag Empty Space to Orbit
+              ✥ Drag Any Unlocked Building Base (Moves Switches With It) or Switch • Click 🔒/🔓 Padlock to Lock/Unlock • Auto-Saves to SQL
             </span>
             <span className="flex items-center gap-1 text-amber-300">
               <span className="w-2.5 h-1.5 rounded bg-orange-500 inline-block" /> 25G Fiber Core Uplinks
@@ -3581,6 +4196,72 @@ export default function MultiDevice3DTopologyScene({
                       )}
                     </div>
                   </div>
+
+                  {/* Independent Switch & Parent Building Base Lock Controls */}
+                  {(() => {
+                    const meta = positions.deviceLayoutMetaById?.[activeEntity.data.id];
+                    if (!meta) return null;
+                    const devLocked = isDeviceLocked(meta.deviceId);
+                    const padLocked = isPadLocked(meta.padId);
+                    const padCoords = positions.padCoordsById?.[meta.padId] || { cx: 0, cz: 0 };
+                    return (
+                      <div className="p-2.5 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center justify-between gap-2 font-mono">
+                        <div>
+                          <span className="text-[10px] uppercase text-slate-400 block">
+                            3D Position Lock State
+                          </span>
+                          <span className="text-[11px] text-slate-300">
+                            Parent Base: <strong className="text-sky-300">{meta.padId}</strong>
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleToggleDeviceLock(
+                                meta.deviceId,
+                                meta.padId,
+                                meta.defaultDx,
+                                meta.defaultDz
+                              )
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition ${
+                              devLocked
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-400/50'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                            }`}
+                            title={
+                              devLocked
+                                ? 'Switch is Locked relative to its base — Click to Unlock Switch'
+                                : 'Switch is Unlocked — Click to Lock Switch relative to its base'
+                            }
+                          >
+                            {devLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                            {devLocked ? 'Switch Locked' : 'Switch Unlocked'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleTogglePadLock(meta.padId, padCoords.cx, padCoords.cz)
+                            }
+                            className={`px-2 py-1 rounded-lg text-[10px] font-bold border flex items-center gap-1 cursor-pointer transition ${
+                              padLocked
+                                ? 'bg-amber-500/20 text-amber-300 border-amber-400/50'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                            }`}
+                            title={
+                              padLocked
+                                ? 'Parent Building Base is Locked — Click to Unlock Base'
+                                : 'Parent Building Base is Unlocked — Click to Lock Base'
+                            }
+                          >
+                            {padLocked ? <Lock className="w-3 h-3" /> : <Unlock className="w-3 h-3" />}
+                            {padLocked ? 'Base Locked' : 'Base Unlocked'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {drawerTab === 'interconnects' && (
                     <div className="space-y-3">
