@@ -23,7 +23,8 @@ import {
   Eye,
   EyeOff,
   Filter,
-  Table2
+  Table2,
+  Save
 } from 'lucide-react';
 import { SWITCH_MODELS, getPortCountForModel } from '../data/c9300HardwareData';
 import { GLOBAL_SITES, buildGlobalAndSiteTopology } from '../data/globalNetworkData';
@@ -67,7 +68,8 @@ export default function LeftNavInventoryDrawer({
   onToggleUnpolledCdpNeighbors,
   hiddenDeviceKeys = [],
   onToggleDeviceVisibility,
-  onResetDeviceVisibility
+  onResetDeviceVisibility,
+  layoutSaveStatus = 'Saved in SQL'
 }) {
   const handleToggleOpen = onToggleOpen || onToggle;
   const handleChangeViewMode = onChangeViewMode || onSelectViewMode;
@@ -319,8 +321,12 @@ export default function LeftNavInventoryDrawer({
             <div className="text-xs font-bold text-white truncate">
               FDU 3D &amp; Topology Explorer
             </div>
-            <div className="text-[10px] font-mono text-slate-400 truncate">
-              {savedDevices.length} Polled • {inventory.allAps.length} APs • SQL Live
+            <div className="text-[10px] font-mono text-slate-400 truncate flex items-center gap-1.5">
+              <span>{savedDevices.length} Polled • {inventory.allAps.length} APs</span>
+              <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[9.5px] inline-flex items-center gap-1">
+                <Save className="w-2.5 h-2.5" />
+                {layoutSaveStatus}
+              </span>
             </div>
           </div>
         </div>
@@ -453,22 +459,24 @@ export default function LeftNavInventoryDrawer({
           </div>
         )}
 
-        {/* Hardware Model SKU Dropdown */}
-        <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
-          <Cpu className="w-3 h-3 text-sky-400 shrink-0" />
-          <span className="text-[10px] font-mono text-slate-400 shrink-0">Model:</span>
-          <select
-            value={switchModelId}
-            onChange={(e) => onModelChange(e.target.value)}
-            className="bg-transparent text-[11px] font-mono font-bold text-sky-300 focus:outline-none cursor-pointer w-full truncate"
-          >
-            {Object.values(SWITCH_MODELS).map((m) => (
-              <option key={m.id} value={m.id} className="bg-slate-950 text-slate-100">
-                {m.id} ({m.portCount}-Port • {m.poeStandard})
-              </option>
-            ))}
-          </select>
-        </div>
+        {/* Hardware Model SKU Dropdown (Hidden in Multi-Device 3D view where each switch uses its actual model) */}
+        {viewMode !== 'multi-3d' && (
+          <div className="flex items-center gap-1.5 bg-slate-950 border border-slate-800 rounded-lg px-2 py-1">
+            <Cpu className="w-3 h-3 text-sky-400 shrink-0" />
+            <span className="text-[10px] font-mono text-slate-400 shrink-0">Model:</span>
+            <select
+              value={switchModelId}
+              onChange={(e) => onModelChange(e.target.value)}
+              className="bg-transparent text-[11px] font-mono font-bold text-sky-300 focus:outline-none cursor-pointer w-full truncate"
+            >
+              {Object.values(SWITCH_MODELS).map((m) => (
+                <option key={m.id} value={m.id} className="bg-slate-950 text-slate-100">
+                  {m.id} ({m.portCount}-Port • {m.poeStandard})
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* Live Poll Switch (SSH) & Upload Show Commands Buttons */}
         <div className="grid grid-cols-2 gap-1.5 pt-0.5">

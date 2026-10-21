@@ -89,6 +89,17 @@ export default function App() {
   const [selectedBuildingFilter, setSelectedBuildingFilter] = useState('ALL');
   const [showUnpolledCdpNeighbors, setShowUnpolledCdpNeighbors] = useState(true);
   const [hiddenDeviceKeys, setHiddenDeviceKeys] = useState([]);
+  const [layoutSaveStatus, setLayoutSaveStatus] = useState('Saved in SQL');
+
+  const handleRestorePresetFilters = ({
+    selectedBuildingFilter: bFilter,
+    showUnpolledCdpNeighbors: showCdp,
+    hiddenDeviceKeys: hKeys
+  } = {}) => {
+    if (typeof bFilter === 'string') setSelectedBuildingFilter(bFilter);
+    if (typeof showCdp === 'boolean') setShowUnpolledCdpNeighbors(showCdp);
+    if (Array.isArray(hKeys)) setHiddenDeviceKeys(hKeys);
+  };
 
   const handleToggleDeviceHidden = (deviceKey) => {
     if (!deviceKey) return;
@@ -390,6 +401,7 @@ export default function App() {
         hiddenDeviceKeys={hiddenDeviceKeys}
         onToggleDeviceVisibility={handleToggleDeviceHidden}
         onResetDeviceVisibility={handleShowAllDevices}
+        layoutSaveStatus={layoutSaveStatus}
       />
 
       {/* =========================================================
@@ -420,6 +432,8 @@ export default function App() {
                 onSelectBuildingFilter={setSelectedBuildingFilter}
                 showUnpolledCdpNeighbors={showUnpolledCdpNeighbors}
                 hiddenDeviceKeys={hiddenDeviceKeys}
+                onRestorePresetFilters={handleRestorePresetFilters}
+                onSaveStatusChange={setLayoutSaveStatus}
               />
             </div>
           )}

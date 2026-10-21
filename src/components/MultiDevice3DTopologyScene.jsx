@@ -29,7 +29,6 @@ import {
   Maximize2,
   Sparkles,
   Activity,
-  ArrowUpDown,
   Lock,
   Unlock,
   Save,
@@ -160,6 +159,7 @@ const DEFAULT_3D_LAYOUT = {
     padsLocked: false,
     devicesLocked: false
   },
+  presets: {},
   pads: {
     vancZone: { cx: -28.0, cz: -25.0, w: 14.0, d: 11.0, locked: false },
     coloZone: { cx: 4.0, cz: -25.0, w: 14.5, d: 13.0, locked: false },
@@ -173,9 +173,9 @@ const DEFAULT_3D_LAYOUT = {
     coreNode: { dx: 0, dz: 0, padId: 'coreZone', maxDx: 18.0, maxDz: 18.0, locked: false },
     // Relative to mcoreZone (M-CORE Florham)
     mcoreNode: { dx: 0, dz: 0, padId: 'mcoreZone', maxDx: 18.0, maxDz: 18.0, locked: false },
-    // Relative to switchZone (Bancroft Hall under T-CORE)
-    wlNode: { dx: 2.2, dz: -2.0, padId: 'switchZone', maxDx: 18.0, maxDz: 18.0, locked: false },
-    wsNode: { dx: -2.2, dz: 2.0, padId: 'switchZone', maxDx: 18.0, maxDz: 18.0, locked: false },
+    // Relative to bldg-MET-BAN (Bancroft Hall under T-CORE)
+    wlNode: { dx: 2.2, dz: -2.0, padId: 'bldg-MET-BAN', maxDx: 18.0, maxDz: 18.0, locked: false },
+    wsNode: { dx: -2.2, dz: 2.0, padId: 'bldg-MET-BAN', maxDx: 18.0, maxDz: 18.0, locked: false },
     // 7 Wi-Fi 6 APs relative to apZone
     'ap-0': { dx: -2.2, dz: -3.8, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
     'ap-1': { dx: 2.2, dz: -3.8, padId: 'apZone', maxDx: 12.0, maxDz: 12.0, locked: false },
@@ -200,6 +200,9 @@ function mergeWithDefault3DLayout(saved) {
       padsLocked: Boolean(saved.defaults.padsLocked),
       devicesLocked: Boolean(saved.defaults.devicesLocked)
     };
+  }
+  if (saved.presets && typeof saved.presets === 'object') {
+    merged.presets = structuredClone(saved.presets);
   }
   if (saved.pads && typeof saved.pads === 'object') {
     for (const [k, v] of Object.entries(saved.pads)) {
@@ -1328,11 +1331,17 @@ export default function MultiDevice3DTopologyScene({
   onSelectBuildingFilter,
   showUnpolledCdpNeighbors = false,
   hiddenDeviceKeys = [],
-  switchGroupOverrides = null
+  switchGroupOverrides = null,
+  onRestorePresetFilters,
+  onSaveStatusChange
 }) {
   const controlsRef = useRef();
-  const [cameraPreset, setCameraPreset] = useState('blueprint-iso');
+  const [cameraPreset, setCameraPreset] = useState('campus-wide');
   const [focusTarget, setFocusTarget] = useState(null);
+  // Canvas Mouse Interaction Mode: 'move' (✋ Orbit/Move Layout) | 'pan' (✊ Pan Canvas)
+  // Governs BOTH Left-Click and Right-Click on the canvas so right-clicking by habit never triggers the wrong action!
+  const [canvasMouseMode, setCanvasMouseMode] = useState('move');
+  const [activePresetSlot, setActivePresetSlot] = useState(null);
   // 4 Label Display Modes:
   // 'hover'    (Hover / Click Only — 100% unobstructed 3D hardware & animated conduits!)
   // 'switches' (Core & Switches Only — APs & Colos appear on hover/click)
@@ -1358,11 +1367,17 @@ export default function MultiDevice3DTopologyScene({
     return structuredClone(DEFAULT_3D_LAYOUT);
   });
 
-  const [saveStatus, setSaveStatus] = useState('Saved');
   const [active3DDrag, setActive3DDrag] = useState(null);
   const drag3DRef = useRef(null);
   const padGroupRefs = useRef({});
   const deviceGroupRefs = useRef({});
+
+  const updateSaveStatus = useCallback(
+    (msg) => {
+      if (onSaveStatusChange) onSaveStatusChange(msg);
+    },
+    [onSaveStatusChange]
+  );
 
   // Register a Three.js Group ref for any draggable 3D Square Base (moves Base + all switches on it at 60fps with 0 React re-renders!)
   const registerPadGroupRef = useCallback((padId) => (el) => {
@@ -1405,21 +1420,104 @@ export default function MultiDevice3DTopologyScene({
   }, []);
 
   // Save 3D layout to localStorage + PostgreSQL
-  const persist3DLayout = useCallback((nextLayout) => {
-    setSaveStatus('Saving...');
-    try {
-      localStorage.setItem(LAYOUT_3D_STORAGE_KEY, JSON.stringify(nextLayout));
-    } catch {
-      // ignore
-    }
-    fetch(API_3D_LAYOUT_ENDPOINT, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ layoutData: nextLayout })
-    })
-      .then(() => setSaveStatus('Saved in SQL ✓'))
-      .catch(() => setSaveStatus('Saved Locally ✓'));
-  }, []);
+  const persist3DLayout = useCallback(
+    (nextLayout, customSuccessLabel = 'Saved in SQL ✓') => {
+      updateSaveStatus('Saving...');
+      try {
+        localStorage.setItem(LAYOUT_3D_STORAGE_KEY, JSON.stringify(nextLayout));
+      } catch {
+        // ignore
+      }
+      fetch(API_3D_LAYOUT_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ layoutData: nextLayout })
+      })
+        .then(() => updateSaveStatus(customSuccessLabel))
+        .catch(() => updateSaveStatus('Saved Locally ✓'));
+    },
+    [updateSaveStatus]
+  );
+
+  // Save current Building Pod filter + 3D Layout + View Settings into Preset Slot [1], [2], or [3]
+  const handleSavePresetSlot = useCallback(
+    (slotId) => {
+      setLayout3D((prev) => {
+        const snapshot = {
+          selectedBuildingFilter,
+          showUnpolledCdpNeighbors,
+          hiddenDeviceKeys: [...hiddenDeviceKeys],
+          cameraPreset,
+          labelMode,
+          showLinkBadges,
+          showZoneTitles,
+          defaults: structuredClone(prev.defaults || { padsLocked: false, devicesLocked: false }),
+          pads: structuredClone(prev.pads || {}),
+          devices: structuredClone(prev.devices || {}),
+          savedAt: new Date().toISOString()
+        };
+        const nextLayout = {
+          ...prev,
+          presets: {
+            ...(prev.presets || {}),
+            [slotId]: snapshot
+          }
+        };
+        persist3DLayout(nextLayout, `Preset [${slotId}] Saved ✓`);
+        return nextLayout;
+      });
+      setActivePresetSlot(slotId);
+    },
+    [
+      selectedBuildingFilter,
+      showUnpolledCdpNeighbors,
+      hiddenDeviceKeys,
+      cameraPreset,
+      labelMode,
+      showLinkBadges,
+      showZoneTitles,
+      persist3DLayout
+    ]
+  );
+
+  // Load Preset Slot [1], [2], or [3] (or save into it if empty or Shift+Clicked)
+  const handleSelectOrSavePresetSlot = useCallback(
+    (slotId, e) => {
+      const existing = layout3D.presets?.[slotId];
+      if (!existing || e?.shiftKey) {
+        handleSavePresetSlot(slotId);
+        return;
+      }
+      setActivePresetSlot(slotId);
+      setFocusTarget(null);
+      if (existing.cameraPreset) setCameraPreset(existing.cameraPreset);
+      if (existing.labelMode) setLabelMode(existing.labelMode);
+      if (typeof existing.showLinkBadges === 'boolean') setShowLinkBadges(existing.showLinkBadges);
+      if (typeof existing.showZoneTitles === 'boolean') setShowZoneTitles(existing.showZoneTitles);
+      if (onRestorePresetFilters) {
+        onRestorePresetFilters({
+          selectedBuildingFilter: existing.selectedBuildingFilter || 'ALL',
+          showUnpolledCdpNeighbors: existing.showUnpolledCdpNeighbors,
+          hiddenDeviceKeys: existing.hiddenDeviceKeys || []
+        });
+      } else if (onSelectBuildingFilter && existing.selectedBuildingFilter) {
+        onSelectBuildingFilter(existing.selectedBuildingFilter);
+      }
+      setLayout3D((prev) => {
+        const nextLayout = {
+          ...prev,
+          defaults: existing.defaults
+            ? structuredClone(existing.defaults)
+            : prev.defaults,
+          pads: existing.pads ? structuredClone(existing.pads) : prev.pads,
+          devices: existing.devices ? structuredClone(existing.devices) : prev.devices
+        };
+        persist3DLayout(nextLayout, `Preset [${slotId}] Loaded ✓`);
+        return nextLayout;
+      });
+    },
+    [layout3D.presets, handleSavePresetSlot, onRestorePresetFilters, onSelectBuildingFilter, persist3DLayout]
+  );
 
   // Check independent lock state for a 3D Building Base (pad) or Switch (device)
   const isPadLocked = useCallback(
@@ -1739,29 +1837,6 @@ export default function MultiDevice3DTopologyScene({
     return () => window.removeEventListener('pointerup', handleWindowPointerUp);
   }, [active3DDrag, persist3DLayout]);
 
-  // 1-Click Swap Purplish Colocation Base & Cyan AP Base in 3D
-  const handleSwapColoAndAp3D = () => {
-    setLayout3D((prev) => {
-      const isDefault = prev.pads.apZone.cz < prev.pads.coloZone.cz;
-      const nextLayout = {
-        ...prev,
-        pads: {
-          ...prev.pads,
-          coloZone: {
-            ...prev.pads.coloZone,
-            cz: isDefault ? -5.0 : 5.5
-          },
-          apZone: {
-            ...prev.pads.apZone,
-            cz: isDefault ? 2.8 : -2.2
-          }
-        }
-      };
-      persist3DLayout(nextLayout);
-      return nextLayout;
-    });
-  };
-
   // Build unified multi-switch & multi-campus topology graph
   const globalGraph = useMemo(() => {
     return buildGlobalAndSiteTopology(savedDevices, parsedSwitchData, switchGroupOverrides);
@@ -1888,27 +1963,24 @@ export default function MultiDevice3DTopologyScene({
     return isSwitchVisibleIn3D(rawWorkStudyNode) ? rawWorkStudyNode : null;
   }, [rawWorkStudyNode, isSwitchVisibleIn3D]);
 
-  // Any additional switches discovered beyond the Core Trio & Bancroft 2FL pair (filtered by Building & Polled/CDP Scope, sorted by Building!)
+  // All switches beyond the 3 Core anchors (including Bancroft Hall BAN, which is now dynamically generated like all other buildings!)
   const additionalSwitches = useMemo(() => {
     const coreId = rawCoreNode?.id;
     const mcoreId = rawMcoreNode?.id;
     const hcoreId = rawHcoreNode?.id;
-    const wlId = rawWlNode?.id;
-    const wsId = rawWorkStudyNode?.id;
     return globalGraph.switchNodes
       .filter(
         (n) =>
           n.id !== coreId &&
           n.id !== mcoreId &&
           n.id !== hcoreId &&
-          n.id !== wlId &&
-          n.id !== wsId &&
           isSwitchVisibleIn3D(n)
       )
       .sort((a, b) => {
         if (a.buildingCode !== b.buildingCode) {
           return (a.buildingCode || '').localeCompare(b.buildingCode || '');
         }
+        if (a.isPolled !== b.isPolled) return a.isPolled ? -1 : 1;
         return (a.hostname || '').localeCompare(b.hostname || '');
       });
   }, [
@@ -1916,8 +1988,6 @@ export default function MultiDevice3DTopologyScene({
     rawCoreNode,
     rawMcoreNode,
     rawHcoreNode,
-    rawWlNode,
-    rawWorkStudyNode,
     isSwitchVisibleIn3D
   ]);
 
@@ -1951,7 +2021,7 @@ export default function MultiDevice3DTopologyScene({
   // - Top-Left: V-CORE (Vancouver Canada) + V-FG1/2 + ASA ASR + 2x NCS + 2x CA ISP
   // - Top-Right: H-CORE (165 Halsey US Colo) + FG-1/2 + NCS-5504 + Fort D-1/2 + 2x US ISP
   // - Middle-Left: M-CORE (mcore-9600 Florham) + M-FG-1/2 + DC2 Core Peers + Florham Building Bases below
-  // - Middle-Right: T-CORE (tcore-9600 Metro) + T-FG-1/2 + DC1 Core Peers + Bancroft & Metro Building Bases below
+  // - Middle-Right: T-CORE (tcore-9600 Metro) + T-FG-1/2 + DC1 Core Peers + Metro Building Bases (including BAN) below
   // - US Core Triangle Optical Legs: 3x Adva FSP 3000 DWDM Shelves (H-CORE<->M-CORE, H-CORE<->T-CORE, M-CORE<->T-CORE)
   const positions = useMemo(() => {
     const getPos = (deviceId) => {
@@ -1962,14 +2032,11 @@ export default function MultiDevice3DTopologyScene({
 
     const corePos = getPos('coreNode');
     const mcorePos = getPos('mcoreNode');
-    const wlPos = getPos('wlNode');
-    const wsPos = getPos('wsNode');
 
     const vancPadCfg = layout3D.pads.vancZone || DEFAULT_3D_LAYOUT.pads.vancZone;
     const coloPadCfg = layout3D.pads.coloZone || DEFAULT_3D_LAYOUT.pads.coloZone;
     const mcorePadCfg = layout3D.pads.mcoreZone || DEFAULT_3D_LAYOUT.pads.mcoreZone;
     const corePadCfg = layout3D.pads.coreZone || DEFAULT_3D_LAYOUT.pads.coreZone;
-    const banPadCfg = layout3D.pads.switchZone || DEFAULT_3D_LAYOUT.pads.switchZone;
 
     const hcoreSaved = layout3D.devices.hcoreNode;
     const hcoreDx = typeof hcoreSaved?.dx === 'number' ? hcoreSaved.dx : 0;
@@ -1981,7 +2048,7 @@ export default function MultiDevice3DTopologyScene({
     ];
     const vcorePos = [vancPadCfg.cx, 0.2, +(vancPadCfg.cz + 2.8).toFixed(2)];
 
-    // 7 Wi-Fi 6 APs arranged on the Right Access Zone Pad
+    // 7 Wi-Fi 6 APs arranged on the Access Point Zone Pad (only mounted when visible APs exist)
     const apPositions = attachedAps.slice(0, 7).map((ap, idx) => {
       const deviceId = `ap-${idx}`;
       const defDev = DEFAULT_3D_LAYOUT.devices[deviceId] || { dx: 0, dz: 0, padId: 'apZone' };
@@ -1998,12 +2065,10 @@ export default function MultiDevice3DTopologyScene({
     // 1. Separate additionalSwitches into:
     //    - florhamCorePeers (buildingCode === 'CORE' && siteCode === 'Florham' -> placed onto mcoreZone)
     //    - metroCorePeers   (buildingCode === 'CORE' && siteCode !== 'Florham' -> placed onto coreZone)
-    //    - banExtraSwitches (buildingCode === 'BAN' -> placed onto Bancroft Hall switchZone)
     //    - florhamBuildingMap (siteCode === 'Florham' -> placed in 3-column grid south of mcoreZone)
-    //    - metroBuildingMap   (siteCode !== 'Florham' -> placed in 3-column grid south of coreZone/switchZone)
+    //    - metroBuildingMap   (siteCode !== 'Florham', including BAN -> placed in 3-column grid south of coreZone)
     const florhamCorePeers = [];
     const metroCorePeers = [];
-    const banExtraSwitches = [];
     const florhamBuildingMap = new Map();
     const metroBuildingMap = new Map();
 
@@ -2016,8 +2081,6 @@ export default function MultiDevice3DTopologyScene({
         } else {
           metroCorePeers.push(sw);
         }
-      } else if (bCode === 'BAN') {
-        banExtraSwitches.push(sw);
       } else {
         const targetMap = isFlorham ? florhamBuildingMap : metroBuildingMap;
         const groupKey = `${isFlorham ? 'FLO' : 'MET'}-${bCode}`;
@@ -2131,52 +2194,6 @@ export default function MultiDevice3DTopologyScene({
       cz: expandedMcoreCz,
       w: expandedMcoreW,
       d: expandedMcoreD
-    };
-
-    // 3. Place additional Bancroft Hall switches on the Bancroft Base (switchZone)
-    const banCols = 2;
-    const banRows = Math.ceil(banExtraSwitches.length / banCols);
-    const banColSpacing = 4.1;
-    const banRowSpacing = 2.95;
-    const baseBanW = banPadCfg.w;
-    const baseBanD =
-      banExtraSwitches.length > 0
-        ? Math.max(banPadCfg.d, +(banPadCfg.d + banRows * banRowSpacing + 0.8).toFixed(2))
-        : banPadCfg.d;
-    const expandedBanCz =
-      banExtraSwitches.length > 0
-        ? +(banPadCfg.cz + (baseBanD - banPadCfg.d) / 2).toFixed(2)
-        : banPadCfg.cz;
-
-    const banExtraPositions = banExtraSwitches.map((sw, idx) => {
-      const col = idx % banCols;
-      const row = Math.floor(idx / banCols);
-      const defaultDx = +((-(banCols - 1) * banColSpacing) / 2 + col * banColSpacing).toFixed(2);
-      const defaultDz = +(3.6 + row * banRowSpacing).toFixed(2);
-      const savedDev = layout3D.devices[sw.id];
-      const dx = typeof savedDev?.dx === 'number' ? savedDev.dx : defaultDx;
-      const dz = typeof savedDev?.dz === 'number' ? savedDev.dz : defaultDz;
-      return {
-        sw,
-        padId: 'switchZone',
-        defaultDx,
-        defaultDz,
-        dx,
-        dz,
-        pos: [+(banPadCfg.cx + dx).toFixed(2), 0.2, +(banPadCfg.cz + dz).toFixed(2)]
-      };
-    });
-
-    const maxBanDx = banExtraPositions.reduce((m, p) => Math.max(m, Math.abs(p.dx)), 0);
-    const maxBanDz = banExtraPositions.reduce((m, p) => Math.max(m, Math.abs(p.dz)), 0);
-    const expandedBanW = Math.max(baseBanW, +(maxBanDx * 2 + 4.8).toFixed(2));
-    const expandedBanD = Math.max(baseBanD, +(maxBanDz * 2 + 4.0).toFixed(2));
-
-    const switchZoneBox = {
-      cx: banPadCfg.cx,
-      cz: expandedBanCz,
-      w: expandedBanW,
-      d: expandedBanD
     };
 
     // Helper to size and arrange a campus's Building Bases into a clean 3-column grid south of its Campus Core!
@@ -2295,11 +2312,11 @@ export default function MultiDevice3DTopologyScene({
       'FLO'
     );
 
-    // 4b. Metropolitan Campus Building Bases (South-East, directly below T-CORE & Bancroft Hall)
+    // 4b. Metropolitan Campus Building Bases (South-East, directly below T-CORE)
     const metroGrid = layoutCampusBuildingGrid(
       metroBuildingMap,
       corePadCfg.cx + 2.0,
-      Math.max(expandedBanCz + expandedBanD / 2 + 4.2, corePadCfg.cz + 22.0),
+      corePadCfg.cz + 8.5,
       'MET'
     );
 
@@ -2307,10 +2324,22 @@ export default function MultiDevice3DTopologyScene({
     const allAdditionalSwitchPositions = [
       ...corePeerPositions,
       ...mcorePeerPositions,
-      ...banExtraPositions,
       ...florhamGrid.switchItems,
       ...metroGrid.switchItems
     ];
+
+    const wlPos =
+      allAdditionalSwitchPositions.find((item) => item.sw.id === wlNode?.id)?.pos || [
+        18.0,
+        0.2,
+        10.5
+      ];
+    const wsPos =
+      allAdditionalSwitchPositions.find((item) => item.sw.id === workStudyNode?.id)?.pos || [
+        15.8,
+        0.2,
+        12.5
+      ];
 
     // 5. FDU-CAMPUSES.drawio Optical (Adva DWDM), Firewall (FortiGate HA), and WAN Edge Nodes
     const advaHmPos = [
@@ -2558,7 +2587,6 @@ export default function MultiDevice3DTopologyScene({
       coloZone: { cx: coloPadCfg.cx, cz: coloPadCfg.cz },
       mcoreZone: { cx: mcoreZoneBox.cx, cz: mcoreZoneBox.cz },
       coreZone: { cx: coreZoneBox.cx, cz: coreZoneBox.cz },
-      switchZone: { cx: switchZoneBox.cx, cz: switchZoneBox.cz },
       apZone: { cx: layout3D.pads.apZone.cx, cz: layout3D.pads.apZone.cz }
     };
     buildingBases.forEach((b) => {
@@ -2590,22 +2618,6 @@ export default function MultiDevice3DTopologyScene({
         defaultDz: 3.2
       };
     }
-    if (wlNode) {
-      deviceLayoutMetaById[wlNode.id] = {
-        deviceId: 'wlNode',
-        padId: 'switchZone',
-        defaultDx: DEFAULT_3D_LAYOUT.devices.wlNode.dx,
-        defaultDz: DEFAULT_3D_LAYOUT.devices.wlNode.dz
-      };
-    }
-    if (workStudyNode) {
-      deviceLayoutMetaById[workStudyNode.id] = {
-        deviceId: 'wsNode',
-        padId: 'switchZone',
-        defaultDx: DEFAULT_3D_LAYOUT.devices.wsNode.dx,
-        defaultDz: DEFAULT_3D_LAYOUT.devices.wsNode.dz
-      };
-    }
     allAdditionalSwitchPositions.forEach((item) => {
       deviceLayoutMetaById[item.sw.id] = {
         deviceId: item.sw.id,
@@ -2629,10 +2641,8 @@ export default function MultiDevice3DTopologyScene({
       coloPadCfg,
       coreZoneBox,
       mcoreZoneBox,
-      switchZoneBox,
       corePeerPositions,
       mcorePeerPositions,
-      banExtraPositions,
       buildingBases,
       apPositions,
       infraNodes,
@@ -3139,9 +3149,8 @@ export default function MultiDevice3DTopologyScene({
             <Sparkles className="w-3 h-3" /> 3D MULTI-DEVICE CAMERA
           </span>
           {[
-            { id: 'blueprint-iso', label: 'Isometric 3D' },
             { id: 'campus-wide', label: `Campus Fabric (${globalGraph.switchNodes.length})` },
-            { id: 'metro-fabric', label: 'Core + Bancroft' },
+            { id: 'metro-fabric', label: 'Core & Data Centers' },
             { id: 'switch-trunks', label: 'Trunks (A↔B)' },
             { id: 'wifi-fleet', label: 'Wi-Fi 6 APs (7)' },
             { id: 'top-blueprint', label: 'Top Plan (90°)' },
@@ -3152,10 +3161,11 @@ export default function MultiDevice3DTopologyScene({
               type="button"
               onClick={() => {
                 setFocusTarget(null);
+                setActivePresetSlot(null);
                 setCameraPreset(preset.id);
               }}
               className={`px-2 py-1 rounded-md text-[11px] font-semibold transition cursor-pointer ${
-                cameraPreset === preset.id && !focusTarget
+                cameraPreset === preset.id && !focusTarget && !activePresetSlot
                   ? 'bg-sky-600 text-white shadow'
                   : 'bg-slate-900 text-slate-300 hover:text-white border border-slate-800'
               }`}
@@ -3164,16 +3174,79 @@ export default function MultiDevice3DTopologyScene({
             </button>
           ))}
 
-          {/* 3D Drag, Lock & Save Controls (Replaces Reset 3D) */}
-          <button
-            type="button"
-            onClick={handleSwapColoAndAp3D}
-            className="px-2 py-1 rounded-md bg-purple-500/20 hover:bg-purple-500/30 text-purple-200 border border-purple-500/50 font-mono font-bold text-[10px] flex items-center gap-1 cursor-pointer transition"
-            title="Swap the Purplish Colocation Base and Cyan Access Point Base in 3D space"
+          {/* Numbered Building Pod Inspection Presets [1] [2] [3] */}
+          <div
+            className="flex items-center gap-1 bg-slate-900/95 p-0.5 rounded-lg border border-cyan-500/40"
+            title="Building Pod Inspection Presets: Click [1], [2], or [3] to load (or save if empty). Click 💾 or Shift+Click a number to overwrite."
           >
-            <ArrowUpDown className="w-3 h-3 text-purple-300" />
-            Swap Colo ▲ / AP ▼
-          </button>
+            <span className="text-[10px] font-mono text-cyan-300 font-bold px-1.5">Pod:</span>
+            {[1, 2, 3].map((slot) => {
+              const slotKey = String(slot);
+              const savedSlot = layout3D.presets?.[slotKey];
+              const isActive = activePresetSlot === slot;
+              const slotTitle = savedSlot
+                ? `Preset [${slot}]: ${savedSlot.name || 'Saved Pod'} (Building: ${savedSlot.buildingFilter || 'ALL'}) — Click to load • Shift+Click to overwrite with current view`
+                : `Preset [${slot}] (Empty) — Click to save current Building Pod filter, layout & camera`;
+              return (
+                <button
+                  key={slot}
+                  type="button"
+                  onClick={(e) => handleSelectOrSavePresetSlot(slot, e)}
+                  className={`px-2 py-0.5 rounded font-mono text-[10px] font-bold cursor-pointer transition ${
+                    isActive
+                      ? 'bg-cyan-500 text-slate-950 shadow'
+                      : savedSlot
+                        ? 'bg-cyan-500/20 text-cyan-200 border border-cyan-400/50 hover:bg-cyan-500/30'
+                        : 'bg-slate-800 text-slate-400 hover:text-slate-200 border border-slate-700'
+                  }`}
+                  title={slotTitle}
+                >
+                  [{slot}]{savedSlot && savedSlot.buildingFilter && savedSlot.buildingFilter !== 'ALL' ? ` ${savedSlot.buildingFilter}` : ''}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => handleSavePresetSlot(activePresetSlot || 1)}
+              className="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-mono text-[10px] font-bold cursor-pointer transition"
+              title={`Save current Building Pod filter (${selectedBuildingFilter || 'ALL'}), 3D layout & camera to Preset [${activePresetSlot || 1}]`}
+            >
+              💾
+            </button>
+          </div>
+
+          {/* Canvas Movement (✋ Open Hand) vs. Canvas Panning (✊ Gripping Hand) Toggle */}
+          <div
+            className="flex items-center gap-0.5 bg-slate-900/95 p-0.5 rounded-lg border border-slate-700/90"
+            title="Select what Right-Click & Left-Click dragging on the 3D canvas does: ✋ Move/Orbit Canvas vs. ✊ Pan Canvas"
+          >
+            <button
+              type="button"
+              onClick={() => setCanvasMouseMode('move')}
+              className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer transition ${
+                canvasMouseMode === 'move'
+                  ? 'bg-sky-500/25 text-sky-200 border border-sky-400/60 shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="✋ Layout Movement (Orbit / Rotate 3D Canvas with Right-Click or Left-Click)"
+            >
+              <span aria-hidden="true">✋</span>
+              <span className="text-[10px]">Move</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setCanvasMouseMode('pan')}
+              className={`px-2 py-0.5 rounded font-mono text-[11px] font-bold flex items-center gap-1 cursor-pointer transition ${
+                canvasMouseMode === 'pan'
+                  ? 'bg-sky-500/25 text-sky-200 border border-sky-400/60 shadow'
+                  : 'text-slate-400 hover:text-white'
+              }`}
+              title="✊ Canvas Panning (Pan laterally across 3D Canvas with Right-Click or Left-Click)"
+            >
+              <span aria-hidden="true">✊</span>
+              <span className="text-[10px]">Pan</span>
+            </button>
+          </div>
 
           {/* Master Lock Controls: Lock All / Unlock All, Lock Bases, Lock Switches */}
           {(() => {
@@ -3263,11 +3336,6 @@ export default function MultiDevice3DTopologyScene({
               </select>
             </div>
           )}
-
-          <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-mono text-[10px] flex items-center gap-1">
-            <Save className="w-3 h-3" />
-            {saveStatus}
-          </span>
         </div>
 
         {/* Right Controls: 4-Mode Label Display Selector + Trunk/Zone Toggles + Drawer Toggle */}
@@ -3404,6 +3472,11 @@ export default function MultiDevice3DTopologyScene({
               maxPolarAngle={Math.PI / 2 - 0.03}
               minDistance={4}
               maxDistance={230}
+              mouseButtons={{
+                LEFT: canvasMouseMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE,
+                MIDDLE: THREE.MOUSE.DOLLY,
+                RIGHT: canvasMouseMode === 'pan' ? THREE.MOUSE.PAN : THREE.MOUSE.ROTATE
+              }}
             />
 
             {/* Studio Architectural & Hardware Faceplate Lighting */}
@@ -3770,131 +3843,8 @@ export default function MultiDevice3DTopologyScene({
               ))}
 
             {/* ===============================================================
-                METRO BUILDING BASE: BANCROFT HALL (BAN)
-                (T-BAN-2FL-WL + WorkStudy + T-BAN-3FL-WL + T-BAN-DC-WL + Merakis)
-               =============================================================== */}
-            <group ref={registerPadGroupRef('switchZone')}>
-              <ZonePlatform3D
-                padId="switchZone"
-                position={[positions.switchZoneBox.cx, 0, positions.switchZoneBox.cz]}
-                size={[positions.switchZoneBox.w, 0.36, positions.switchZoneBox.d]}
-                baseColor="#091d34"
-                rimColor="#10b981"
-                title={`BAN • BANCROFT HALL (${(wlNode ? 1 : 0) + (workStudyNode ? 1 : 0) + positions.banExtraPositions.length} SWITCHES)`}
-                subtitle="2 Polled C9300-24UX + 4 Discovered Bancroft Switches • Click Plaque to Filter BAN"
-                showZoneTitles={showZoneTitles}
-                isLocked={isPadLocked('switchZone')}
-                onTogglePadLock={() =>
-                  handleTogglePadLock(
-                    'switchZone',
-                    positions.switchZoneBox.cx,
-                    positions.switchZoneBox.cz
-                  )
-                }
-                isDraggingThisPad={
-                  active3DDrag?.kind === 'pad' && active3DDrag?.id === 'switchZone'
-                }
-                isParentOfDraggedDevice={
-                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'switchZone'
-                }
-                onStartPadDrag={handleStartPadDrag3D}
-                onClickTitle={
-                  onSelectBuildingFilter
-                    ? () =>
-                        onSelectBuildingFilter(
-                          selectedBuildingFilter === 'BAN' ? 'ALL' : 'BAN'
-                        )
-                    : undefined
-                }
-              />
-
-              {wlNode && (
-                <group ref={registerDeviceGroupRef('wlNode')}>
-                  <SwitchC9300Node3D
-                    deviceId="wlNode"
-                    padId="switchZone"
-                    defaultDx={DEFAULT_3D_LAYOUT.devices.wlNode.dx}
-                    defaultDz={DEFAULT_3D_LAYOUT.devices.wlNode.dz}
-                    node={wlNode}
-                    position={positions.wlPos}
-                    portsData={buildSwitchPortsFor3DNode(wlNode, savedDevices, parsedSwitchData)}
-                    isSelected={activeEntity?.id === wlNode.id}
-                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wlNode'}
-                    isLocked={isDeviceLocked('wlNode')}
-                    onToggleDeviceLock={handleToggleDeviceLock}
-                    isActiveChassis={parsedSwitchData?.device?.hostname === wlNode.hostname}
-                    onSelect={handleSelectEntity}
-                    onStartDeviceDrag={handleStartDeviceDrag3D}
-                    onOpenHwDrawer={onOpenHwDrawer}
-                    labelMode={labelMode}
-                    xrayMode={multiXrayMode}
-                    explodeFactor={multiExplode}
-                  />
-                </group>
-              )}
-
-              {workStudyNode && (
-                <group ref={registerDeviceGroupRef('wsNode')}>
-                  <SwitchC9300Node3D
-                    deviceId="wsNode"
-                    padId="switchZone"
-                    defaultDx={DEFAULT_3D_LAYOUT.devices.wsNode.dx}
-                    defaultDz={DEFAULT_3D_LAYOUT.devices.wsNode.dz}
-                    node={workStudyNode}
-                    position={positions.wsPos}
-                    portsData={buildSwitchPortsFor3DNode(workStudyNode, savedDevices, parsedSwitchData)}
-                    isSelected={activeEntity?.id === workStudyNode.id}
-                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'wsNode'}
-                    isLocked={isDeviceLocked('wsNode')}
-                    onToggleDeviceLock={handleToggleDeviceLock}
-                    isActiveChassis={parsedSwitchData?.device?.hostname === workStudyNode.hostname}
-                    onSelect={handleSelectEntity}
-                    onStartDeviceDrag={handleStartDeviceDrag3D}
-                    onOpenHwDrawer={onOpenHwDrawer}
-                    labelMode={labelMode}
-                    xrayMode={multiXrayMode}
-                    explodeFactor={multiExplode}
-                  />
-                </group>
-              )}
-
-              {positions.banExtraPositions.map(({ sw, pos, padId, defaultDx, defaultDz }) => {
-                const useCompact = positions.additionalSwitchPositions.length > 18;
-                return (
-                  <group key={sw.id} ref={registerDeviceGroupRef(sw.id)}>
-                    <SwitchC9300Node3D
-                      deviceId={sw.id}
-                      padId={padId}
-                      defaultDx={defaultDx}
-                      defaultDz={defaultDz}
-                      node={sw}
-                      position={pos}
-                      portsData={
-                        useCompact
-                          ? []
-                          : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
-                      }
-                      isSelected={activeEntity?.id === sw.id}
-                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
-                      isLocked={isDeviceLocked(sw.id)}
-                      onToggleDeviceLock={handleToggleDeviceLock}
-                      isActiveChassis={parsedSwitchData?.device?.hostname === sw.hostname}
-                      onSelect={handleSelectEntity}
-                      onStartDeviceDrag={handleStartDeviceDrag3D}
-                      onOpenHwDrawer={onOpenHwDrawer}
-                      labelMode={labelMode}
-                      xrayMode={multiXrayMode}
-                      explodeFactor={multiExplode}
-                      useCompactMesh={useCompact}
-                    />
-                  </group>
-                );
-              })}
-            </group>
-
-            {/* ===============================================================
                 FLORHAM CAMPUS (SOUTH-WEST UNDER M-CORE) & METRO CAMPUS (SOUTH-EAST UNDER T-CORE)
-                INDIVIDUAL CAMPUS BUILDING BASES
+                INDIVIDUAL CAMPUS BUILDING BASES (INCLUDING BANCROFT HALL 'BAN')
                =============================================================== */}
             {positions.buildingBases.map((bldg) => {
               const useCompact = positions.additionalSwitchPositions.length > 18;
@@ -3963,49 +3913,51 @@ export default function MultiDevice3DTopologyScene({
             })}
 
             {/* ===============================================================
-                ZONE PAD 3: WI-FI 6 UPOE ACCESS LAYER FLEET (7 APs • 194.0W)
+                WI-FI 6 UPOE ACCESS LAYER FLEET (DYNAMICALLY MOUNTED WHEN APS ARE VISIBLE)
                =============================================================== */}
-            <group ref={registerPadGroupRef('apZone')}>
-              <ZonePlatform3D
-                padId="apZone"
-                position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
-                size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
-                baseColor="#081c29"
-                rimColor="#38bdf8"
-                title="BANCROFT WI-FI 6 UPOE ACCESS FLEET (7× CATALYST APs • 194.0W)"
-                subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
-                showZoneTitles={showZoneTitles}
-                isLocked={isPadLocked('apZone')}
-                onTogglePadLock={() =>
-                  handleTogglePadLock('apZone', layout3D.pads.apZone.cx, layout3D.pads.apZone.cz)
-                }
-                isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
-                isParentOfDraggedDevice={
-                  active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
-                }
-                onStartPadDrag={handleStartPadDrag3D}
-              />
+            {positions.apPositions.length > 0 && (
+              <group ref={registerPadGroupRef('apZone')}>
+                <ZonePlatform3D
+                  padId="apZone"
+                  position={[layout3D.pads.apZone.cx, 0, layout3D.pads.apZone.cz]}
+                  size={[layout3D.pads.apZone.w, 0.36, layout3D.pads.apZone.d]}
+                  baseColor="#081c29"
+                  rimColor="#38bdf8"
+                  title={`BANCROFT WI-FI 6 UPOE ACCESS FLEET (${positions.apPositions.length}× CATALYST APs • 194.0W)`}
+                  subtitle="6× C9130AXI-B (30W) + 1× C9105AXW-B Sniffer (14W)"
+                  showZoneTitles={showZoneTitles}
+                  isLocked={isPadLocked('apZone')}
+                  onTogglePadLock={() =>
+                    handleTogglePadLock('apZone', layout3D.pads.apZone.cx, layout3D.pads.apZone.cz)
+                  }
+                  isDraggingThisPad={active3DDrag?.kind === 'pad' && active3DDrag?.id === 'apZone'}
+                  isParentOfDraggedDevice={
+                    active3DDrag?.kind === 'device' && active3DDrag?.padId === 'apZone'
+                  }
+                  onStartPadDrag={handleStartPadDrag3D}
+                />
 
-              {positions.apPositions.map(({ deviceId, padId, defaultDx, defaultDz, ap, pos }) => (
-                <group key={ap.hostname} ref={registerDeviceGroupRef(deviceId)}>
-                  <WirelessApNode3D
-                    deviceId={deviceId}
-                    padId={padId}
-                    defaultDx={defaultDx}
-                    defaultDz={defaultDz}
-                    ap={ap}
-                    position={pos}
-                    isSelected={activeEntity?.id === ap.hostname}
-                    isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
-                    isLocked={isDeviceLocked(deviceId)}
-                    onToggleDeviceLock={handleToggleDeviceLock}
-                    onSelect={handleSelectEntity}
-                    onStartDeviceDrag={handleStartDeviceDrag3D}
-                    labelMode={labelMode}
-                  />
-                </group>
-              ))}
-            </group>
+                {positions.apPositions.map(({ deviceId, padId, defaultDx, defaultDz, ap, pos }) => (
+                  <group key={ap.hostname} ref={registerDeviceGroupRef(deviceId)}>
+                    <WirelessApNode3D
+                      deviceId={deviceId}
+                      padId={padId}
+                      defaultDx={defaultDx}
+                      defaultDz={defaultDz}
+                      ap={ap}
+                      position={pos}
+                      isSelected={activeEntity?.id === ap.hostname}
+                      isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === deviceId}
+                      isLocked={isDeviceLocked(deviceId)}
+                      onToggleDeviceLock={handleToggleDeviceLock}
+                      onSelect={handleSelectEntity}
+                      onStartDeviceDrag={handleStartDeviceDrag3D}
+                      labelMode={labelMode}
+                    />
+                  </group>
+                ))}
+              </group>
+            )}
 
             {/* ===============================================================
                 3D GLOWING FIBER, ADVA DWDM, MGIG TRUNK & UPOE CONDUITS
