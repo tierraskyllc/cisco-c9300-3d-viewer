@@ -471,7 +471,7 @@ function ZonePlatform3D({
                 className="text-[9.5px] font-mono font-bold tracking-wider uppercase flex items-center gap-1"
                 style={{ color: rimColor }}
               >
-                <span>{isLocked ? '🔒' : '✥'} {title}</span>
+                <span>{title}</span>
               </div>
               {onTogglePadLock && (
                 <button
@@ -480,9 +480,9 @@ function ZonePlatform3D({
                     e.stopPropagation();
                     onTogglePadLock(padId, position[0], position[2]);
                   }}
-                  className={`px-1.5 py-0.5 rounded border text-[8.5px] font-mono font-bold flex items-center gap-0.5 cursor-pointer transition ${
+                  className={`p-0.5 rounded border cursor-pointer transition ${
                     isLocked
-                      ? 'bg-amber-500/25 text-amber-200 border-amber-400/60 hover:bg-amber-500/40'
+                      ? 'bg-amber-500/25 text-amber-300 border-amber-400/60 hover:bg-amber-500/40'
                       : 'bg-slate-800/90 text-emerald-300 border-slate-600 hover:border-emerald-400'
                   }`}
                   title={
@@ -492,15 +492,9 @@ function ZonePlatform3D({
                   }
                 >
                   {isLocked ? (
-                    <>
-                      <Lock className="w-2.5 h-2.5 text-amber-300" />
-                      <span>Locked</span>
-                    </>
+                    <Lock className="w-2.5 h-2.5" />
                   ) : (
-                    <>
-                      <Unlock className="w-2.5 h-2.5 text-emerald-300" />
-                      <span>Unlocked</span>
-                    </>
+                    <Unlock className="w-2.5 h-2.5" />
                   )}
                 </button>
               )}
