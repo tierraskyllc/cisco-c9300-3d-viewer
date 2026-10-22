@@ -287,11 +287,12 @@ function clamp(val, min, max) {
 /**
  * Smooth 3D Camera Controller for the Multi-Device 3D Network Topology Scene
  */
-function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
+function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef, onZoomOutClear }) {
   const { camera } = useThree();
   const targetPos = useRef(new THREE.Vector3(2, 46, 58));
   const targetLookAt = useRef(new THREE.Vector3(2, 0, 4));
   const isTransitioning = useRef(false);
+  const hasReachedFocus = useRef(false);
   const lastKey = useRef('');
 
   const presets = useMemo(
@@ -313,6 +314,7 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
 
   if (lastKey.current !== currentKey) {
     lastKey.current = currentKey;
+    hasReachedFocus.current = false;
     if (focusTarget && focusTarget.pos) {
       const [fx, fy, fz] = focusTarget.pos;
       const dist = focusTarget.distance || 9.5;
@@ -328,15 +330,29 @@ function TopologyCameraRig({ cameraPreset, focusTarget, controlsRef }) {
   }
 
   useFrame((_, delta) => {
-    if (!isTransitioning.current) return;
-    const step = Math.min(1, delta * 5.0);
-    camera.position.lerp(targetPos.current, step);
-    if (controlsRef.current) {
-      controlsRef.current.target.lerp(targetLookAt.current, step);
-      controlsRef.current.update();
+    if (isTransitioning.current) {
+      const step = Math.min(1, delta * 5.0);
+      camera.position.lerp(targetPos.current, step);
+      if (controlsRef.current) {
+        controlsRef.current.target.lerp(targetLookAt.current, step);
+        controlsRef.current.update();
+      }
+      if (camera.position.distanceTo(targetPos.current) < 0.25) {
+        isTransitioning.current = false;
+        if (focusTarget) {
+          hasReachedFocus.current = true;
+        }
+      }
+      return;
     }
-    if (camera.position.distanceTo(targetPos.current) < 0.12) {
-      isTransitioning.current = false;
+
+    // If a switch was clicked/focused and the user manually zooms out past 26 units, clear the selected switch badge
+    if (focusTarget && hasReachedFocus.current && controlsRef.current && onZoomOutClear) {
+      const distFromTarget = camera.position.distanceTo(controlsRef.current.target);
+      if (distFromTarget > 26) {
+        hasReachedFocus.current = false;
+        onZoomOutClear();
+      }
     }
   });
 
@@ -1504,6 +1520,7 @@ export default function MultiDevice3DTopologyScene({
       }
       setActivePresetSlot(slotId);
       setFocusTarget(null);
+      setSelected3DEntity(null);
       if (existing.cameraPreset) setCameraPreset(existing.cameraPreset);
       if (existing.labelMode) setLabelMode(existing.labelMode);
       if (typeof existing.showLinkBadges === 'boolean') setShowLinkBadges(existing.showLinkBadges);
@@ -3268,6 +3285,7 @@ export default function MultiDevice3DTopologyScene({
               key={preset.id}
               type="button"
               onClick={() => {
+                setSelected3DEntity(null);
                 setFocusTarget(null);
                 setActivePresetSlot(null);
                 setCameraPreset(preset.id);
@@ -3429,7 +3447,11 @@ export default function MultiDevice3DTopologyScene({
               <Building2 className="w-3 h-3 text-cyan-400 shrink-0" />
               <select
                 value={selectedBuildingFilter}
-                onChange={(e) => onSelectBuildingFilter(e.target.value)}
+                onChange={(e) => {
+                  setSelected3DEntity(null);
+                  setFocusTarget(null);
+                  onSelectBuildingFilter(e.target.value);
+                }}
                 className="bg-transparent text-[10px] font-mono font-bold text-cyan-300 focus:outline-none cursor-pointer"
                 title="Filter 3D scene by Campus Building"
               >
@@ -3563,7 +3585,16 @@ export default function MultiDevice3DTopologyScene({
           className="relative flex-1 h-full min-w-0"
           style={{ cursor: active3DDrag ? 'grabbing' : 'default' }}
         >
-          <Canvas shadows dpr={[1, 2]}>
+          <Canvas
+            shadows
+            dpr={[1, 2]}
+            onPointerMissed={() => {
+              if (!active3DDrag) {
+                setSelected3DEntity(null);
+                setFocusTarget(null);
+              }
+            }}
+          >
             <color attach="background" args={[bgColor]} />
             <fog attach="fog" args={[bgColor, 110, 290]} />
 
@@ -3572,6 +3603,10 @@ export default function MultiDevice3DTopologyScene({
               cameraPreset={cameraPreset}
               focusTarget={focusTarget}
               controlsRef={controlsRef}
+              onZoomOutClear={() => {
+                setSelected3DEntity(null);
+                setFocusTarget(null);
+              }}
             />
             <OrbitControls
               ref={controlsRef}
@@ -3657,7 +3692,7 @@ export default function MultiDevice3DTopologyScene({
                     key={infra.id}
                     node={infra}
                     position={infra.pos}
-                    isSelected={activeEntity?.id === infra.id}
+                    isSelected={selected3DEntity?.id === infra.id}
                     onSelect={handleSelectEntity}
                     labelMode={labelMode}
                   />
@@ -3698,7 +3733,7 @@ export default function MultiDevice3DTopologyScene({
                     defaultDz={3.2}
                     node={hcoreNode}
                     position={positions.hcorePos}
-                    isSelected={activeEntity?.id === hcoreNode.id}
+                    isSelected={selected3DEntity?.id === hcoreNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'hcoreNode'}
                     isLocked={isDeviceLocked('hcoreNode')}
                     onToggleDeviceLock={handleToggleDeviceLock}
@@ -3717,7 +3752,7 @@ export default function MultiDevice3DTopologyScene({
                     key={infra.id}
                     node={infra}
                     position={infra.pos}
-                    isSelected={activeEntity?.id === infra.id}
+                    isSelected={selected3DEntity?.id === infra.id}
                     onSelect={handleSelectEntity}
                     labelMode={labelMode}
                   />
@@ -3753,10 +3788,13 @@ export default function MultiDevice3DTopologyScene({
                 onStartPadDrag={handleStartPadDrag3D}
                 onClickTitle={
                   onSelectBuildingFilter
-                    ? () =>
+                    ? () => {
+                        setSelected3DEntity(null);
+                        setFocusTarget(null);
                         onSelectBuildingFilter(
                           selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
-                        )
+                        );
+                      }
                     : undefined
                 }
               />
@@ -3770,7 +3808,7 @@ export default function MultiDevice3DTopologyScene({
                     defaultDz={DEFAULT_3D_LAYOUT.devices.mcoreNode.dz}
                     node={mcoreNode}
                     position={positions.mcorePos}
-                    isSelected={activeEntity?.id === mcoreNode.id}
+                    isSelected={selected3DEntity?.id === mcoreNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'mcoreNode'}
                     isLocked={isDeviceLocked('mcoreNode')}
                     onToggleDeviceLock={handleToggleDeviceLock}
@@ -3789,7 +3827,7 @@ export default function MultiDevice3DTopologyScene({
                     key={infra.id}
                     node={infra}
                     position={infra.pos}
-                    isSelected={activeEntity?.id === infra.id}
+                    isSelected={selected3DEntity?.id === infra.id}
                     onSelect={handleSelectEntity}
                     labelMode={labelMode}
                   />
@@ -3811,7 +3849,7 @@ export default function MultiDevice3DTopologyScene({
                           ? []
                           : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
                       }
-                      isSelected={activeEntity?.id === sw.id}
+                      isSelected={selected3DEntity?.id === sw.id}
                       isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
                       isLocked={isDeviceLocked(sw.id)}
                       onToggleDeviceLock={handleToggleDeviceLock}
@@ -3858,10 +3896,13 @@ export default function MultiDevice3DTopologyScene({
                 onStartPadDrag={handleStartPadDrag3D}
                 onClickTitle={
                   onSelectBuildingFilter
-                    ? () =>
+                    ? () => {
+                        setSelected3DEntity(null);
+                        setFocusTarget(null);
                         onSelectBuildingFilter(
                           selectedBuildingFilter === 'CORE' ? 'ALL' : 'CORE'
-                        )
+                        );
+                      }
                     : undefined
                 }
               />
@@ -3875,7 +3916,7 @@ export default function MultiDevice3DTopologyScene({
                     defaultDz={DEFAULT_3D_LAYOUT.devices.coreNode.dz}
                     node={coreNode}
                     position={positions.corePos}
-                    isSelected={activeEntity?.id === coreNode.id}
+                    isSelected={selected3DEntity?.id === coreNode.id}
                     isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === 'coreNode'}
                     isLocked={isDeviceLocked('coreNode')}
                     onToggleDeviceLock={handleToggleDeviceLock}
@@ -3894,7 +3935,7 @@ export default function MultiDevice3DTopologyScene({
                     key={infra.id}
                     node={infra}
                     position={infra.pos}
-                    isSelected={activeEntity?.id === infra.id}
+                    isSelected={selected3DEntity?.id === infra.id}
                     onSelect={handleSelectEntity}
                     labelMode={labelMode}
                   />
@@ -3916,7 +3957,7 @@ export default function MultiDevice3DTopologyScene({
                           ? []
                           : buildSwitchPortsFor3DNode(sw, savedDevices, parsedSwitchData)
                       }
-                      isSelected={activeEntity?.id === sw.id}
+                      isSelected={selected3DEntity?.id === sw.id}
                       isDragging={active3DDrag?.kind === 'device' && active3DDrag?.id === sw.id}
                       isLocked={isDeviceLocked(sw.id)}
                       onToggleDeviceLock={handleToggleDeviceLock}
@@ -3944,7 +3985,7 @@ export default function MultiDevice3DTopologyScene({
                   key={infra.id}
                   node={infra}
                   position={infra.pos}
-                  isSelected={activeEntity?.id === infra.id}
+                  isSelected={selected3DEntity?.id === infra.id}
                   onSelect={handleSelectEntity}
                   labelMode={labelMode}
                 />
@@ -3983,10 +4024,13 @@ export default function MultiDevice3DTopologyScene({
                     onStartPadDrag={handleStartPadDrag3D}
                     onClickTitle={
                       onSelectBuildingFilter
-                        ? () =>
+                        ? () => {
+                            setSelected3DEntity(null);
+                            setFocusTarget(null);
                             onSelectBuildingFilter(
                               selectedBuildingFilter === bldg.code ? 'ALL' : bldg.code
-                            )
+                            );
+                          }
                         : undefined
                     }
                   />
@@ -4092,7 +4136,7 @@ export default function MultiDevice3DTopologyScene({
                 endPos={lnk.endPos}
                 color={lnk.color}
                 radius={lnk.radius}
-                isSelected={activeEntity?.id === lnk.id}
+                isSelected={selected3DEntity?.id === lnk.id}
                 onSelect={handleSelectEntity}
                 showLinkBadges={showLinkBadges}
               />
